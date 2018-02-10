@@ -7,17 +7,18 @@ from scipy.optimize import minimize
 
 # consider two suppliers, two types
 # input types -----------
-ntypes = 2
+types = {0:0.1, 1:0.2}
+ntypes = len(types)
 nsupp = 2
 Theta = [p for p in itertools.product(range(ntypes), repeat=nsupp)]
-fm = {0:[0.5,0.5],1:[0.5,0.5]} # both firms have only one type
+fm = {0:[0.6,0.4],1:[0.75,0.25]} # both firms have only one type
 f = {}
 print Theta
 for perm in Theta:
     f[perm] = numpy.prod([fm[i][perm[i]] for i in fm])
 # ------------------------
-a_1, a_2 = 0.5, 0.25
-r_1, r_2 = 1,1
+a_1, a_2 = 0.25, 0.5
+r_1, r_2 = 1,1.1
 gamma = 0.5
 p_1, p_2 = 0.5,0.25
 if r_1 + r_2 < 2*gamma:
@@ -31,30 +32,106 @@ nc = numpy.dot(nD, nalpha)
 np = numpy.array([p_1, p_2])
 ne = numpy.ones(2)
 
-def loss(x):
-    fobj = 0
-    ns = nD.shape[0]
-    for i in range(len(Theta)):
-        idi, idf = ns*i, ns*(i+1)
-        fobj += f[Theta[i]]*(0.5*numpy.dot(numpy.dot(x[idi:idf], nD), x[idi:idf]) + numpy.dot((np-nc),x[idi:idf]))
-    return fobj
 
 
 
+##### CENTRALIZED WITH IC AND IR ######
+# now we try to implement using diagonal matrices depending on the number of scenarios
+x0 = numpy.ones(2*len(Theta)*nsupp)
 
-x0 = numpy.ones(len(Theta)*nD.shape[0])
-# cons = [{'type': 'eq',
-#          'fun' : lambda x: numpy.sum(x[i:(i+nD.shape[0])]) - 1.0} for i in range(0,len(x0),nD.shape[0])]
 
 
-cons = ({'type': 'eq','fun' : lambda x: x[0]+x[1] - 1.0},
-        {'type': 'eq','fun' : lambda x: x[2]+x[3] - 1.0},
-        {'type': 'eq','fun' : lambda x: x[4]+x[5] - 1.0},
-        {'type': 'eq','fun' : lambda x: x[6]+x[7] - 1.0})
-res = minimize(loss, x0, method='SLSQP', constraints=cons,
-               bounds=[(0, numpy.inf) for i in range(len(Theta)*nD.shape[0])], options={'disp': True})
+# this dict tell us the probability of all other subjects being of their type
+f_woi = {i:{j:0 for j in Theta} for i in range(nsupp)}
+for i in f_woi:
+    print i
+    supp_woi = range(nsupp)
+    del supp_woi[i]
+    print supp_woi
+    for perm in Theta:
+        print perm
+        f_woi[i][perm] = numpy.prod([fm[j][perm[i]] for j in supp_woi])
+    print f_woi[i]
 
-print(res.x)
+
+
+bIR = numpy.zeros((ntypes*nsupp, len(x0)))
+for i in range(nsupp):
+    for j in range(ntypes):
+        # we assume that the type of employee i is j
+        # now we find all scenarios where employee i is of type j
+        idxs = [k for k in range(len(Theta)) if Theta[k][i] == j]
+        for k in idxs:
+            bIR[i*nsupp+j, nsupp*k+i] = -types[j]*f_woi[i][Theta[k]]
+            bIR[i*nsupp+j, nsupp*(k+len(Theta))+i] = f_woi[i][Theta[k]]
+
+bIC = numpy.zeros((ntypes*(ntypes-1)*nsupp,len(x0)))
+row = 0
+for i in range(nsupp):
+    for j in range(ntypes):
+        other_types = range(ntypes)
+        del other_types[j]
+        for k in other_types:
+            #row = i*ntypes*(ntypes-1) + j*(ntypes-1) + k
+            print j, other_types, row
+            idxs_j = [l for l in range(len(Theta)) if Theta[l][i] == j]
+            idxs_k = [l for l in range(len(Theta)) if Theta[l][i] == k]
+            for l in idxs_j:
+                bIC[row, nsupp*l+i] = -types[j]*f_woi[i][Theta[l]]
+                bIC[row, nsupp*(l+len(Theta))+i] = f_woi[i][Theta[l]]
+            for l in idxs_k:
+                bIC[row, nsupp*l+i] = types[j]*f_woi[i][Theta[l]]
+                bIC[row, nsupp*(l+len(Theta))+i] = -f_woi[i][Theta[l]]
+            row+=1
+
+bNN = numpy.zeros((len(Theta)*nsupp, 2*len(Theta)*nsupp)) # non-negativity constraints
+bNN[0:len(Theta)*nsupp, 0:len(Theta)*nsupp] = numpy.identity(len(Theta)*nsupp)
+
+
+bG = bIR
+bG = numpy.append(bG, bIC, axis=0)
+bG = numpy.append(bG,bNN, axis=0)
+
+
+
+bD = numpy.zeros((len(x0), len(x0)))
+bA = numpy.zeros((len(Theta), len(x0)))
+bh = numpy.zeros(bG.shape[0])
+bb = numpy.ones(len(Theta))
+bq = numpy.zeros(len(x0))
+
+bq = numpy.zeros(len(x0))
+for i in range(len(Theta)):
+    bD[nsupp*i:nsupp*(i+1),nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nD
+    bA[i,nsupp*i:nsupp*(i+1)] = numpy.ones(nsupp)
+    bq[nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nc
+    bq[(len(Theta)*nsupp + nsupp*i):(len(Theta)*nsupp + nsupp*(i+1))] = -f[Theta[i]]*numpy.ones(nsupp)
+
+
+# shapes
+print 'x', x0.shape
+print 'D', bD.shape
+print 'q', bq.shape
+print 'G', bG.shape
+print 'h', bh.shape
+print 'A', bA.shape
+print 'b', bb.shape
+
+# obj
+D = matrix(bD)
+q = matrix(bq)
+# ineq constraints
+G = matrix(bG)
+h = matrix(bh)
+# eq constraints
+A = matrix(bA)
+b = matrix(bb)
+
+print bq
+print f
+print nc
+
+
 
 
 sys.exit(1)
@@ -72,6 +149,32 @@ def EasyProblemScipy():
 
     res = minimize(loss, x0, method='SLSQP', constraints=cons,
                    bounds=[(0, numpy.inf) for i in range(nD.shape[0])], options={'disp': True})
+
+    print(res.x)
+
+def EasyProblemScipy2():
+    def loss(x):
+        fobj = 0
+        ns = nD.shape[0]
+        for i in range(len(Theta)):
+            idi, idf = ns*i, ns*(i+1)
+            fobj += f[Theta[i]]*(0.5*numpy.dot(numpy.dot(x[idi:idf], nD), x[idi:idf]) + numpy.dot((np-nc),x[idi:idf]))
+        return fobj
+
+
+
+
+    x0 = numpy.ones(len(Theta)*nD.shape[0])
+    # cons = [{'type': 'eq',
+    #          'fun' : lambda x: numpy.sum(x[i:(i+nD.shape[0])]) - 1.0} for i in range(0,len(x0),nD.shape[0])]
+
+
+    cons = ({'type': 'eq','fun' : lambda x: x[0]+x[1] - 1.0},
+            {'type': 'eq','fun' : lambda x: x[2]+x[3] - 1.0},
+            {'type': 'eq','fun' : lambda x: x[4]+x[5] - 1.0},
+            {'type': 'eq','fun' : lambda x: x[6]+x[7] - 1.0})
+    res = minimize(loss, x0, method='SLSQP', constraints=cons,
+                   bounds=[(0, numpy.inf) for i in range(len(Theta)*nD.shape[0])], options={'disp': True})
 
     print(res.x)
 
@@ -107,6 +210,52 @@ def EasyProblemCVXOPT():
     sol=solvers.qp(D, p-c, G, h, A, b)
     print(sol['x'])
 
+def EasyProblemCVXOPT2():
+    # now we try to implement using diagonal matrices depending on the number of scenarios
+    x0 = numpy.ones(len(Theta)*nsupp)
+    bD = numpy.zeros((len(x0),len(x0)))
+    bA = numpy.zeros((len(Theta), len(x0)))
+    bG = -numpy.identity(len(x0))
+    bh = numpy.zeros(len(x0))
+    bb = numpy.ones(len(Theta))
+    bp = numpy.zeros(len(x0))
+    bc = numpy.zeros(len(x0))
+
+    print bD
+
+    print Theta
+    print f
+    # now we build the blocks of the matrix
+    for i in range(len(Theta)):
+        bD[nsupp*i:nsupp*(i+1),nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nD
+        bA[i,nsupp*i:nsupp*(i+1)] = numpy.ones(nsupp)
+        bc[nsupp*i:nsupp*(i+1)] = nc
+        bp[nsupp*i:nsupp*(i+1)] = np
+        print f[Theta[i]]*nD
+        print f[Theta[i]]
+
+    print bD
+    print bA
+    print bG
+    print bh
+    print bb
+    print bp
+    print bc
+
+
+
+    D = matrix(bD)
+    G = matrix(bG)
+    h = matrix(bh)
+    A = matrix(bA)
+    b = matrix(bb)
+    p = matrix(bp)
+    c = matrix(bc)
+
+
+    # note: this method minimizes; since we want to maximize, we minimize the negative of our objective
+    sol=solvers.qp(D, p-c, G, h, A, b)
+    print(sol['x'])
 
 
 
