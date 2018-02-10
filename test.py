@@ -14,14 +14,19 @@ So far I have tested with 1 supplier and multiple types; and with two suppliers
 with a single type. Both work. I'm trying to figure out why with 2 suppliers and
 2 types is not working
 '''
-# types and distribution
+# 2 types, 1 supplier
 # types = {0:0.1, 1:0.2}
 # fm = {0:[0.5,0.5]} # marginals of distribution
+
+# 2 types, 2 suppliers
 types = {0:0.1, 1:0.2}
 ntypes = len(types)
 fm = {0:[0.6,0.4],1:[0.75,0.25]} # both firms have only one type
-# types = {0:0.1, 1:0.2}
-# fm = {0:[0.5,0.5],1:[0.5,0.5]} # marginals of distribution
+
+# 3 types, 2 suppliers
+# types = {0:0.1, 1:0.2, 2:0.25}
+# ntypes = len(types)
+# fm = {0:[0.6,0.2, 0.2],1:[0.5,0.25, 0.25]} # both firms have only one type
 
 # suppliers
 nsupp = len(fm)
@@ -112,10 +117,15 @@ for i in range(nsupp):
             row+=1
 print bIC
 
-# non-negativity constraints
-bNN = numpy.zeros((len(Theta)*nsupp, 2*len(Theta)*nsupp)) # non-negativity constraints
-bNN[0:len(Theta)*nsupp, 0:len(Theta)*nsupp] = numpy.identity(len(Theta)*nsupp)
+# # non-negativity constraints for allocation
+# bNN = numpy.zeros((len(Theta)*nsupp, 2*len(Theta)*nsupp)) # non-negativity constraints
+# bNN[0:len(Theta)*nsupp, 0:len(Theta)*nsupp] = numpy.identity(len(Theta)*nsupp)
+# print bNN
+
+# non-negativity constraints for allocation and transfers
+bNN = numpy.identity(nvars) # non-negativity constraints
 print bNN
+
 
 # put all inequality constraints on the same matrix
 bG = bNN
@@ -138,6 +148,20 @@ for i in range(len(Theta)):
     bq[nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nc
     bq[(len(Theta)*nsupp + nsupp*i):(len(Theta)*nsupp + nsupp*(i+1))] = -f[Theta[i]]*numpy.ones(nsupp)
 
+
+
+
+from numpy.linalg import matrix_rank
+
+print bA
+print matrix_rank(bA)
+print bG
+print matrix_rank(bG)
+
+test_matrix = numpy.append(bA, bG, axis=0)
+print test_matrix
+print matrix_rank(test_matrix)
+# sys.exit(1)
 
 
 # shapes
