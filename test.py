@@ -6,42 +6,62 @@ from cvxopt.modeling import op, dot, variable
 from scipy.optimize import minimize
 
 # consider two suppliers, two types
-# input types -----------
+# ------------------------------------------------------------------------------
+# Input
+# ------------------------------------------------------------------------------
+'''
+So far I have tested with 1 supplier and multiple types; and with two suppliers
+with a single type. Both work. I'm trying to figure out why with 2 suppliers and
+2 types is not working
+'''
+# types and distribution
+# types = {0:0.1, 1:0.2}
+# fm = {0:[0.5,0.5]} # marginals of distribution
 types = {0:0.1, 1:0.2}
 ntypes = len(types)
-nsupp = 2
-Theta = [p for p in itertools.product(range(ntypes), repeat=nsupp)]
 fm = {0:[0.6,0.4],1:[0.75,0.25]} # both firms have only one type
+# types = {0:0.1, 1:0.2}
+# fm = {0:[0.5,0.5],1:[0.5,0.5]} # marginals of distribution
+
+# suppliers
+nsupp = len(fm)
+
+# type space = cross product of types among suppliers
+Theta = [p for p in itertools.product(range(ntypes), repeat=nsupp)]
+
+# joint distribution based on marginals
 f = {}
-print Theta
 for perm in Theta:
     f[perm] = numpy.prod([fm[i][perm[i]] for i in fm])
-# ------------------------
+
+# alphas
 a_1, a_2 = 0.25, 0.5
+# matrix for demand
 r_1, r_2 = 1,1.1
 gamma = 0.5
-p_1, p_2 = 0.5,0.25
+
 if r_1 + r_2 < 2*gamma:
     print '***ERROR: does not satisfy consistency check'
     sys.exit(1)
 
-nalpha = numpy.array([a_1, a_2])
-nGamma = numpy.array([[r_1,-gamma],[-gamma,r_2]])
+# build input matrices
+if nsupp == 2:
+    nalpha = numpy.array([a_1, a_2])
+    nGamma = numpy.array([[r_1,-gamma],[-gamma,r_2]])
+if nsupp == 1:
+    nalpha = numpy.array([a_1])
+    nGamma = numpy.array([[r_1]])
+
 nD = inv(nGamma)
 nc = numpy.dot(nD, nalpha)
-np = numpy.array([p_1, p_2])
-ne = numpy.ones(2)
 
+# ------------------------------------------------------------------------------
+# CENTRALIZED WITH IC AND IR
+# ------------------------------------------------------------------------------
+nvars = 2*len(Theta)*nsupp # here we include transfers and allocations
+x0 = numpy.ones(nvars)
 
-
-
-##### CENTRALIZED WITH IC AND IR ######
-# now we try to implement using diagonal matrices depending on the number of scenarios
-x0 = numpy.ones(2*len(Theta)*nsupp)
-
-
-
-# this dict tell us the probability of all other subjects being of their type
+# this dict tell us the probability of all other subjects being of their type $f_{-i}(\theta_{-i})$
 f_woi = {i:{j:0 for j in Theta} for i in range(nsupp)}
 for i in f_woi:
     print i
@@ -53,19 +73,26 @@ for i in f_woi:
         f_woi[i][perm] = numpy.prod([fm[j][perm[i]] for j in supp_woi])
     print f_woi[i]
 
+if nsupp == 1:
+    f_woi = {i:{j:1 for j in Theta} for i in range(nsupp)}
 
-
-bIR = numpy.zeros((ntypes*nsupp, len(x0)))
+# individual rationality constraints
+bIR = numpy.zeros((ntypes*nsupp, nvars))
+row = 0
 for i in range(nsupp):
     for j in range(ntypes):
         # we assume that the type of employee i is j
         # now we find all scenarios where employee i is of type j
         idxs = [k for k in range(len(Theta)) if Theta[k][i] == j]
+        print i, j, idxs
         for k in idxs:
-            bIR[i*nsupp+j, nsupp*k+i] = -types[j]*f_woi[i][Theta[k]]
-            bIR[i*nsupp+j, nsupp*(k+len(Theta))+i] = f_woi[i][Theta[k]]
+            bIR[row, nsupp*k+i] = -types[j]*f_woi[i][Theta[k]]
+            bIR[row, nsupp*(k+len(Theta))+i] = f_woi[i][Theta[k]]
+        row+=1
+print bIR
 
-bIC = numpy.zeros((ntypes*(ntypes-1)*nsupp,len(x0)))
+# incentive compatibility constraints
+bIC = numpy.zeros((ntypes*(ntypes-1)*nsupp,nvars))
 row = 0
 for i in range(nsupp):
     for j in range(ntypes):
@@ -83,29 +110,34 @@ for i in range(nsupp):
                 bIC[row, nsupp*l+i] = types[j]*f_woi[i][Theta[l]]
                 bIC[row, nsupp*(l+len(Theta))+i] = -f_woi[i][Theta[l]]
             row+=1
+print bIC
 
+# non-negativity constraints
 bNN = numpy.zeros((len(Theta)*nsupp, 2*len(Theta)*nsupp)) # non-negativity constraints
 bNN[0:len(Theta)*nsupp, 0:len(Theta)*nsupp] = numpy.identity(len(Theta)*nsupp)
+print bNN
+
+# put all inequality constraints on the same matrix
+bG = bNN
+bG = numpy.append(bG, bIR, axis=0)
+if bIC.shape[0]>0: # if there is only one type there are no IC constraints
+    bG = numpy.append(bG, bIC, axis=0)
+print bG
 
 
-bG = bIR
-bG = numpy.append(bG, bIC, axis=0)
-bG = numpy.append(bG,bNN, axis=0)
-
-
-
-bD = numpy.zeros((len(x0), len(x0)))
-bA = numpy.zeros((len(Theta), len(x0)))
+bD = numpy.zeros((nvars, nvars))
+bA = numpy.zeros((len(Theta), nvars))
 bh = numpy.zeros(bG.shape[0])
 bb = numpy.ones(len(Theta))
-bq = numpy.zeros(len(x0))
+bq = numpy.zeros(nvars)
 
-bq = numpy.zeros(len(x0))
+bq = numpy.zeros(nvars)
 for i in range(len(Theta)):
     bD[nsupp*i:nsupp*(i+1),nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nD
     bA[i,nsupp*i:nsupp*(i+1)] = numpy.ones(nsupp)
     bq[nsupp*i:nsupp*(i+1)] = f[Theta[i]]*nc
     bq[(len(Theta)*nsupp + nsupp*i):(len(Theta)*nsupp + nsupp*(i+1))] = -f[Theta[i]]*numpy.ones(nsupp)
+
 
 
 # shapes
@@ -121,17 +153,15 @@ print 'b', bb.shape
 D = matrix(bD)
 q = matrix(bq)
 # ineq constraints
-G = matrix(bG)
+G = matrix(bG, (bG.shape[0],bG.shape[1]))
 h = matrix(bh)
 # eq constraints
-A = matrix(bA)
+A = matrix(bA,(bA.shape[0],bA.shape[1]))
 b = matrix(bb)
 
-print bq
-print f
-print nc
 
-
+sol=solvers.qp(D, -q, -G, h, A, b)
+print(sol['x'])
 
 
 sys.exit(1)
