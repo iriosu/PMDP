@@ -14,14 +14,19 @@ So far I have tested with 1 supplier and multiple types; and with two suppliers
 with a single type. Both work. I'm trying to figure out why with 2 suppliers and
 2 types is not working
 '''
-# types and distribution
+# 2 types, 1 supplier
 # types = {0:0.1, 1:0.2}
 # fm = {0:[0.5,0.5]} # marginals of distribution
+
+# 2 types, 2 suppliers
 types = {0:0.1, 1:0.2}
 ntypes = len(types)
 fm = {0:[0.6,0.4],1:[0.75,0.25]} # both firms have only one type
-# types = {0:0.1, 1:0.2}
-# fm = {0:[0.5,0.5],1:[0.5,0.5]} # marginals of distribution
+
+# 3 types, 2 suppliers
+# types = {0:0.1, 1:0.2, 2:0.25}
+# ntypes = len(types)
+# fm = {0:[0.6,0.2, 0.2],1:[0.5,0.25, 0.25]} # both firms have only one type
 
 # suppliers
 nsupp = len(fm)
