@@ -1,19 +1,5 @@
-import numpy
+import sys, numpy
 from cvxopt import matrix, log, div, spdiag, solvers
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def F(x = None, z = None, verbose = False):
     if x is None:  return 2, matrix(0.0, (2,1))
@@ -38,14 +24,18 @@ G = matrix(I)
 # print h
 
 x0 = matrix(numpy.ones(2))
+x0[1]=0.1
+x0[0]=10
 z0 = matrix(numpy.ones(3))
 
+print G*x0
+
 f,Df,H = F(x0,z0)
-# print f
-# print Df
-# print H
+print f
+print Df
+print H
 
 sol = solvers.cp(F, G, h)
-print(sol['x'])
+print(sol['sl'])
 
 # F(sol['x'], None, True)
