@@ -75,12 +75,10 @@ f_woi = Dict(i=>Dict(j=>0.0 for j in Theta) for i in 1:nsupp)
 
 
 for i in keys(f_woi)
-    println(i)
     supp_woi = [j for j in 1:nsupp if j!=i]
-
-    # println(supp_woi)
     for perm in Theta
-        f_woi[i][perm] = prod([fm[j][perm[i]] for j in supp_woi])
+        f_woi[i][perm] = prod([fm[j][perm[j]] for j in supp_woi])
+        println("    ", supp_woi, " ", perm, " ", [fm[j][perm[j]] for j in supp_woi])
     end
 end
 # println(f_woi)

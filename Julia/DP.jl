@@ -67,15 +67,13 @@ f_woi = Dict(i=>Dict(j=>0.0 for j in Theta) for i in 1:nsupp)
 
 
 for i in keys(f_woi)
-    println(i)
     supp_woi = [j for j in 1:nsupp if j!=i]
-
-    # println(supp_woi)
     for perm in Theta
-        f_woi[i][perm] = prod([fm[j][perm[i]] for j in supp_woi])
+        f_woi[i][perm] = prod([fm[j][perm[j]] for j in supp_woi])
+        println("    ", supp_woi, " ", perm, " ", [fm[j][perm[j]] for j in supp_woi])
     end
 end
-# println(f_woi)
+
 if nsupp == 1
     f_woi = Dict(i=>Dict(j=>1.0 for j in Theta) for i in 1:nsupp)
 end
@@ -97,8 +95,19 @@ for i in 1:nsupp
         row=row+1
     end
 end
-println(bIR_x)
-println(bIR_t)
+# println(bIR_x)
+# println(bIR_t)
+
+
+# # checking IR constraints
+# println(fm)
+# println(types)
+# println(f_woi)
+# for i in 1:size(bIR_x)[1]
+#     println(bIR_x[i,:], " ", bIR_t[i,:])
+# end
+# exit()
+
 
 
 bIC_x = zeros((ntypes*(ntypes-1)*nsupp,nvars))
@@ -124,66 +133,110 @@ for i in 1:nsupp
     end
 end
 
+# checking IC constraints
+# println(fm)
+# println(types)
+# println(f_woi)
+# for i in 1:size(bIC_x)[1]
+#     println(bIR_x[i,:], " ", bIR_t[i,:])
+#     println(bIC_x[i,:], " ", bIC_t[i,:])
+#     println("-------------------------------------------------")
+# end
+# exit()
+
+
 bG_x = vcat(bIR_x, bIC_x)
 bG_t = vcat(bIR_t, bIC_t)
 # println(bG)
-println(size(bG_x))
-println(size(bG_t))
+# println(size(bG_x))
+# println(size(bG_t))
 
-bD = zeros((nvars, nvars))
+D = zeros((nvars, nvars)) # matrix D in diagonal
+wD = zeros((nvars, nvars)) # matrix D weighted by distribution of types
 bA = zeros((length(Theta), nvars))
 bh = zeros(size(bG_x)[1])
 bb = ones(length(Theta))
 
-bq_x = zeros(nvars)
-bq_t = zeros(nvars)
+wq_x = zeros(nvars)
+wq_t = zeros(nvars)
+q_x = zeros(nvars)
+q_t = zeros(nvars)
 
 
 for i in 1:length(Theta)
-    bD[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nD
+    D[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = nD
+    wD[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nD
     bA[i,nsupp*(i-1)+1:nsupp*i] = ones(nsupp)
-    bq_x[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nc
-    bq_t[nsupp*(i-1)+1:nsupp*i] = -f[Theta[i]]*ones(nsupp)
+    wq_x[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nc
+    wq_t[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*ones(nsupp)
+    q_x[nsupp*(i-1)+1:nsupp*i] = nc
+    q_t[nsupp*(i-1)+1:nsupp*i] = ones(nsupp)
 end
 
-println(bA)
+# checking feasibility constraints
+# for i in 1:size(bA)[1]
+#     println(bA[i,:], " ", bb[i])
+# end
 
-aux = 0.5*x0'*bD*x0
-aux2 = bq_x'*x0
-println(aux2)
-I = eye(nvars)
-e = ones(nvars)
+# checking matrix D
+# for i in 1:size(D)[1]
+#     println(D[i,:])
+# end
+# println(f)
+# for i in 1:size(wD)[1]
+#     println(wD[i,:])
+# end
 
-
+# println(wq_x)
+# println(q_x)
+# println(wq_t)
+# println(q_t)
+#
+# exit()
 
 
 # OPTIMIZATION
+
 using JuMP
 using Gurobi, KNITRO
 
+problem = "decentralized"
 
-# m = Model(solver=GurobiSolver(Presolve=0))
-m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB,
-                              ms_enable = 1, ms_maxsolves = 1000,
-                              algorithm = KTR_ALG_ACT_CG,
-                              outmode = KTR_OUTMODE_SCREEN,
-                              KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
-                              KTR_PARAM_MIP_OUTINTERVAL = 1,
-                              KTR_PARAM_MIP_MAXNODES = 10000,
-                              KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
+if problem == "centralized"
+    m = Model(solver=GurobiSolver(Presolve=0))
+elseif problem == "decentralized"
+    m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB,
+                                  ms_enable = 1, ms_maxsolves = 1000,
+                                  algorithm = KTR_ALG_ACT_CG,
+                                  outmode = KTR_OUTMODE_SCREEN,
+                                  KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
+                                  KTR_PARAM_MIP_OUTINTERVAL = 1,
+                                  KTR_PARAM_MIP_MAXNODES = 10000,
+                                  KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
+else
+    println("***ERROR: unknown problem")
+    exit()
+end
+
 @variable(m, x[1:nvars]>=0)
-@variable(m, p[1:nvars]>=0)
 @variable(m, t[1:nvars]>=0)
-@variable(m, u[1:nvars]>=0)
-@variable(m, v[1:nvars])
 @variable(m, z)
+
+# constraints centralized problem: IR, IC, feas
 @constraint(m, bG_x*x + bG_t*t .<= bh) # IR + IC
 @constraint(m, bA*x .== bb) # feas
-@constraint(m, kkt_opt, p - bq_x + bD*x - u + v .== 0)
-@NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
-@NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-@constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
-@constraint(m, z <=  bq_x'*x + bq_t'*t - 0.5*x'*bD*x )
+@constraint(m, z <=  wq_x'*x - wq_t'*t - 0.5*x'*wD*x )
+
+if problem == "decentralized"
+    @variable(m, p[1:nvars]>=0)
+    @variable(m, u[1:nvars]>=0)
+    @variable(m, v[1:nvars])
+    @constraint(m, kkt_opt, p - q_x + D*x - u + v .== 0)
+    @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
+    @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
+    @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+end
+
 @objective(m, Max, z)
 
 print(m)
