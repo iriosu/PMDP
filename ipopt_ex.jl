@@ -2,6 +2,112 @@ using JuMP
 using Ipopt
 
 
+m = Model(solver="Ipopt")
+@variable(m, x)
+@variable(m, y)
+
+setValue(x, 0.0); setValue(y, 0.0)
+@NLObjective(m, Min, (1-x)^2 + 100(y-x^2)^2)
+
+solve(m)
+println("x = ", getValue(x), " y = ", getValue(y))
+
+# adding a (linear) constraint
+@addConstraint(m, x + y == 10)
+solve(m)
+println("x = ", getValue(x), " y = ", getValue(y))
+
+
+
+
+exit()
+
+# objective
+function eval_f(x)
+  return x[1]^2 + x[2]^2
+end
+
+# constraints
+function eval_g(x, g)
+  # Bad: g    = zeros(2)  # Allocates new array
+  # OK:  g[:] = zeros(2)  # Modifies 'in place'
+  g[1] = x[1]   * x[2]
+end
+
+# gradient of objective
+function eval_grad_f(x, grad_f)
+  # Bad: grad_f    = zeros(4)  # Allocates new array
+  # OK:  grad_f[:] = zeros(4)  # Modifies 'in place'
+  grad_f[1] = 2*x[1]
+  grad_f[2] = 2*x[2]
+end
+
+# jacobian matrix of constraints
+function eval_jac_g(x, mode, rows, cols, values)
+  if mode == :Structure
+    # Constraint (row) 1
+    rows[1] = 1; cols[1] = 1
+    rows[2] = 1; cols[2] = 2
+  else
+    # Constraint (row) 1
+    values[1] = x[2]  # 1,1
+    values[2] = x[1]  # 1,2
+  end
+end
+
+# hessian matrix  is the sum of the hessian of objective plus the constraints times multipliers
+function eval_h(x, mode, rows, cols, obj_factor, lambda, values)
+  if mode == :Structure
+    # Symmetric matrix, fill the lower left triangle only
+    idx = 1
+    for row = 1:2
+      for col = 1:row
+        rows[idx] = row
+        cols[idx] = col
+        idx += 1
+      end
+    end
+  else
+    # Again, only lower left triangle
+    # Objective
+    values[1] = obj_factor * 2 # 1,1
+    values[3] = obj_factor * 2 # 2,2
+
+    # First constraint
+    values[2] += lambda[1]   # 2,1
+  end
+end
+
+n = 2
+x_L = [0.0,0.0]
+x_U = [5.0, 10.0]
+
+m = 1
+g_L = [1.0]
+g_U = [1.0]
+
+prob = createProblem(n, x_L, x_U, m, g_L, g_U, 2, 3,
+                     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
+
+prob.x = [0.1, 10]
+status = solveProblem(prob)
+
+println(Ipopt.ApplicationReturnStatus[status])
+println(prob.x)
+println(prob.obj_val)
+
+
+exit()
+
+
+
+
+
+
+
+
+
+
 
 
 # hs071
