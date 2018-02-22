@@ -1,5 +1,6 @@
 using Iterators
 
+# IMPORTANT: types must be sorted in increasing order
 types = Dict(1=>0.1, 2=>0.2)
 # println(types)
 # for i in keys(types)
@@ -7,6 +8,8 @@ types = Dict(1=>0.1, 2=>0.2)
 # end
 ntypes = length(types)
 fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
+
+
 nsupp = length(fm)
 # println(nsupp, ntypes)
 Theta = []
@@ -49,6 +52,7 @@ nc = nD*nalpha
 # println(nc)
 # println(size(nc))
 
+# bulding cumulative distribution
 
 # ------------------------------------------------------------------------------
 # CENTRALIZED WITH IC AND IR
@@ -200,7 +204,7 @@ end
 using JuMP
 using Gurobi, KNITRO
 
-problem = "decentralized"
+problem = "centralized"
 
 if problem == "centralized"
     m = Model(solver=GurobiSolver(Presolve=0))
@@ -223,7 +227,7 @@ end
 @variable(m, z)
 
 # constraints centralized problem: IR, IC, feas
-@constraint(m, bG_x*x + bG_t*t .<= bh) # IR + IC
+@constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
 @constraint(m, bA*x .== bb) # feas
 @constraint(m, z <=  wq_x'*x - wq_t'*t - 0.5*x'*wD*x )
 
@@ -244,5 +248,7 @@ print(m)
 status = solve(m)
 
 println("Objective value: ", getobjectivevalue(m))
+
+println("Allocations: ", getvalue(x))
 
 exit()
