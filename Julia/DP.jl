@@ -1,28 +1,35 @@
 using Iterators
 
+# ==============================
+# ADDITIONAL FUNCTIONS AND UTILITIES
+# ==============================
+function combine(a, r, n, out)
+    # recursively generates all permutations to generate types
+    if length(a) == r
+        println(a)
+        println(tuple(a))
+        push!(out,tuple(deepcopy(a)...))
+    else
+        for i in 1:n
+            push!(a,i)
+            combine(a, r, n, out)
+            pop!(a)
+        end
+    end
+end
+
+function combwithrep(r,n)
+    # returns list with all types
+   out = []
+   combine([], r, n, out)
+   return out
+end
+
+
 # IMPORTANT: types must be sorted in increasing order
+### INPUTS ###
 types = Dict(1=>0.1, 2=>0.2)
-# println(types)
-# for i in keys(types)
-#     println(i, types[i])
-# end
-ntypes = length(types)
 fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
-
-
-nsupp = length(fm)
-# println(nsupp, ntypes)
-Theta = []
-for p in product(1:ntypes,1:ntypes)
-    push!(Theta,p)
-end
-# println(Theta)
-# println(Theta[end][1])
-# joint distribution based on marginals
-f = Dict()
-for perm in Theta
-    f[perm] = prod([fm[i][perm[i]] for i=1:nsupp])
-end
 
 # alphas
 a_1, a_2 = 0.25, 0.5
@@ -44,6 +51,20 @@ if nsupp == 1
     nalpha = [a_1]
     nGamma = [r_1]
 end
+
+
+
+
+ntypes = length(types)
+nsupp = length(fm)
+Theta = combwithrep(nsupp, ntypes)
+
+# joint distribution based on marginals
+f = Dict()
+for perm in Theta
+    f[perm] = prod([fm[i][perm[i]] for i=1:nsupp])
+end
+
 nD = inv(nGamma)
 # println(size(nD))
 # println(size(nalpha))
@@ -81,6 +102,7 @@ end
 if nsupp == 1
     f_woi = Dict(i=>Dict(j=>1.0 for j in Theta) for i in 1:nsupp)
 end
+
 
 # individual rationality constraints
 bIR_x = zeros((ntypes*nsupp, nvars))

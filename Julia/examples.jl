@@ -1,4 +1,4 @@
-using Iterators
+include("utilities.jl")
 
 # demand function in 2x2 example
 
@@ -33,25 +33,12 @@ end
 
 
 
-# data
+### INPUTS ###
+# types = Dict(1=>0.1, 2=>0.2)
+# fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 
-types = Dict(1=>0.1, 2=>0.2)
-
-theta = [types[i] for i in keys(types)]
-sort!(theta)
-
-# println(types)
-# for i in keys(types)
-#     println(i, types[i])
-# end
-ntypes = length(types)
-fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
-nsupp = length(fm)
-# println(nsupp, ntypes)
-Theta = []
-for p in product(1:ntypes,1:ntypes)
-    push!(Theta,p)
-end
+types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
+fm = Dict(1=>[0.5,0.25, 0.25],2=>[0.6,0.2, 0.2])
 
 # alphas
 a_1, a_2 = 0.25, 0.5
@@ -63,14 +50,17 @@ r = [r_1, r_2]
 
 gamma = 0.5
 
-p = [0.2, 0.4]
 
-d_1 = demand(p, a, r, gamma, 1)
-d_2 = demand(p, a, r, gamma, 2)
 
-println(d_1)
-println(d_2)
+### MAIN ###
+theta = [types[i] for i in keys(types)]
+sort!(theta)
+ntypes = length(types)
+nsupp = length(fm)
+Theta = combwithrep(nsupp, ntypes)
 
+
+# compute cumulative marginal distributions
 Fm = Dict(i=>[] for i in keys(fm))
 for key in keys(fm)
     for i in 1:length(fm[key])
