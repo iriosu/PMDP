@@ -45,7 +45,6 @@ function FormulateAndSolve(types, fm, nalpha, nGamma, version)
         supp_woi = [j for j in 1:nsupp if j!=i]
         for perm in Theta
             f_woi[i][perm] = prod([fm[j][perm[j]] for j in supp_woi])
-            println("    ", supp_woi, " ", perm, " ", [fm[j][perm[j]] for j in supp_woi])
         end
     end
 
@@ -62,7 +61,6 @@ function FormulateAndSolve(types, fm, nalpha, nGamma, version)
             # we assume that the type of employee i is j
             # now we find all scenarios where employee i is of type j
             idxs = [k for k in 1:length(Theta) if Theta[k][i] == j]
-            println(i," ", j," ", idxs)
             for k in idxs
                 bIR_x[row, nsupp*(k-1)+i] = -types[j]*f_woi[i][Theta[k]]
                 bIR_t[row, nsupp*(k-1)+i] = f_woi[i][Theta[k]]
@@ -168,13 +166,16 @@ function FormulateAndSolve(types, fm, nalpha, nGamma, version)
     # println(q_t)
     #
     # exit()
-    x0 = [0.363636, 0.636364, 0.672727, 0.327273, 0.634091, 0.365909, 0.131818, 0.868182, 0.440909, 0.559091, 0.402273, 0.597727, 0.131818, 0.868182, 0.440909, 0.559091, 0.402273, 0.597727]
-    t0 = [0.1,0.1,0.1,0.5,0.1,0.45,0.4,0.1,0.4,0.5,0.4,0.45,0.4,0.1,0.4,0.5,0.4,0.45]
+    # x0 = [0.363636, 0.636364, 0.672727, 0.327273, 0.634091, 0.365909, 0.131818, 0.868182, 0.440909, 0.559091, 0.402273, 0.597727, 0.131818, 0.868182, 0.440909, 0.559091, 0.402273, 0.597727]
+    # t0 = [0.1,0.1,0.1,0.5,0.1,0.45,0.4,0.1,0.4,0.5,0.4,0.45,0.4,0.1,0.4,0.5,0.4,0.45]
 
-    f_0 = wq_x'*x0 - wq_t'*t0 - 0.5*x0'*wD*x0
-    println(f_0)
-    # 0.004353273328039364
-    exit()
+    # f_0 = wq_x'*x0 - wq_t'*t0 - 0.5*x0'*wD*x0
+    # println(f_0)
+    # println(bA*x0)
+    # println(bG_x*x0 + bG_t*t0 )
+    # # 0.004353273328039364
+    # exit()
+
     # OPTIMIZATION
     if version == "centralized"
         m = Model(solver=GurobiSolver(Presolve=0, MIPGap = 1e-12))
@@ -228,7 +229,8 @@ end
 # types = Dict(1=>0.1, 2=>0.2)
 # fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
-fm = Dict(1=>[0.5,0.25, 0.25],2=>[0.6,0.2, 0.2])
+fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
+V = check_vc_increasing(fm)
 
 # alphas
 a_1, a_2 = 0.25, 0.5
@@ -251,7 +253,7 @@ if length(fm) == 1
     nGamma = [r_1]
 end
 
-version = "centralized" # or decentralized
+version = "decentralized" # or decentralized
 
 FormulateAndSolve(types, fm, nalpha, nGamma, version)
 
