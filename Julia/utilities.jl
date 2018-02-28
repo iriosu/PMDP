@@ -69,3 +69,25 @@ function check_vc_increasing(fm)
     end
     return v
 end
+
+
+function check_conditions_HM(Theta, fm, loc, delta)
+    # check conditions for Theorem 4.1
+    c_star = min([abs(loc[j+1]-loc[j]) for j=1:(nsupp-1)]...)
+    V = check_vc_increasing(fm) # V[i,j] = virtual cost of supplier i for type j
+    boo = false
+    println(size(V)[2])
+
+    for i in 1:length(Theta)
+        prob = prod([fm[j][Theta[i][j]] for j=1:nsupp])
+        if prob == 0
+            continue
+        end
+        v_c = [V[j,Theta[i][j]] for j=1:nsupp]
+
+        boos = [abs(v_c[j+1]-v_c[j])<= 0.25*delta*abs(loc[j+1]-loc[j]) for j=1:(nsupp-1)]
+        println(boos)
+        println(prod(boos))
+    end
+
+end

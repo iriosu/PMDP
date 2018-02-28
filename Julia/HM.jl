@@ -171,7 +171,11 @@ function FormulateAndSolve(types, fm, loc, delta, version)
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
         @variable(m, v[1:nvars])
-        @constraint(m, kkt_opt, p - q_x + D*x - u + v .== 0)
+        @constraint(m, kkt_opt[i=1:nsupp, j=1:sts],
+                p[(j-1)*nsupp+i] - u[i] + v[i]
+                + delta*( sum( ( sum( x[s] for s=((j-1)*nsupp+1):r)-loc[r-(j-1)*nsupp] ) for r=((j-1)*nsupp+i):(j*nsupp) ) )
+                - delta*( sum( ( loc[r+1-(j-1)*nsupp] - sum( x[s] for s=((j-1)*nsupp+1):r) ) for r=((j-1)*nsupp+i):(j*nsupp-1) ) ) == 0)
+
         @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
         @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
         @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
@@ -180,12 +184,13 @@ function FormulateAndSolve(types, fm, loc, delta, version)
     @objective(m, Max, z)
 
     print(m)
-
+    # exit()
     status = solve(m)
 
     println("Objective value: ", getobjectivevalue(m))
 
     println("Allocations: ", getvalue(x))
+    println("Transfers: ", getvalue(t))
 end
 
 
@@ -203,7 +208,7 @@ V = check_vc_increasing(fm)
 L = [0,1]
 delta = 1
 
-version = "centralized" # or decentralized
+version = "decentralized" # or decentralized
 
 FormulateAndSolve(types, fm, L, delta, version)
 

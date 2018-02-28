@@ -99,7 +99,7 @@ gamma = 0.5
 
 ### Hotelling Model Params ###
 L = [0,1]
-delta = 6
+delta = 1
 
 
 ### MAIN ###
@@ -108,6 +108,11 @@ sort!(theta)
 ntypes = length(types)
 nsupp = length(fm)
 Theta = combwithrep(nsupp, ntypes)
+
+
+check_conditions_HM(Theta, fm, L, delta)
+exit()
+
 
 # compute cumulative distribution
 Fm = ComputeCumulativeDistribution(fm)
