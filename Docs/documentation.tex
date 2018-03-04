@@ -1,0 +1,157 @@
+\documentclass[11pt, oneside]{article}
+
+\input{doc.tex}
+\usepackage{framed}
+\usepackage{makecell}
+\usepackage[round]{natbib}   % omit 'round' option if you prefer square brackets
+
+\newcommand{\stcomp}[1]{ {#1}^{\mathsf{c}} }
+
+
+\bibliographystyle{plainnat}
+
+
+
+\title{Documentation}
+
+\date{\today}
+
+% Document starts here!
+\begin{document}
+
+\section{Repository}
+
+The repository Julia contains four main files:
+\begin{itemize}
+    \item HM.jl: implementation of the Hotelling model.
+    \item LDM.jl: implementation of the general affine demand model.
+    \item utilities.jl: contains a series of methods to compute demands, virtual costs, and check assumptions.
+    \item exmaples.jl: tests solutions with close forms to contrast with the results from optimization.
+\end{itemize}
+
+In what follows I describe some details that are relevant in each file.
+
+\section{HM.jl}
+This file implements the Hotelling demand model. Given \(\Theta = \lrp{\theta_1, \ldots, \theta_m}\) and \(n\) suppliers, the structure of the variables
+is
+\[
+x(\theta) = \lrc{x_1(\theta_1), \ldots, x_n(\theta_1), x_1(\theta_2), \ldots, x_n(\theta_2), \ldots, x_1(\theta_m), \ldots, x_n(\theta_m)}.
+\]
+The same holds for the other variables, i.e. \(t, p\), and also for the dual variables \(u\) and \(v\).
+
+The formulation of the centralized problem follows directly from the paper, considering as objective function
+\[
+\max \E_{\theta}\lrc{\sum_{i=1}^n
+-\frac{\delta}{2}\lrc{ \lrp{l_i-\sum_{j=1}^{i-1} x_j(\theta)}^2 + \lrp{\sum_{j=1}^{i} x_j(\theta) - l_i}^2  } }
+\]
+In the case with two suppliers in the extremes of [0,1] this reduces to
+\[
+\max \E_{\theta}\lrc{
+-\frac{\delta}{2}\lrc{ x_1(\theta)^2 + x_2(\theta)^2} - t_1(\theta) - t_2(\theta) }
+\]
+To implement the decentralized problem, we incorporate the KKT conditions as
+additional constraints to the centralized problem. In the two-supplier case these are: for each \(\theta \in \Theta\) and \(i\in \lrl{1,2}\)
+\[
+\begin{split}
+    p_i(\theta) + \delta x_i(\theta) - u_i(\theta) + v(\theta) &= 0 \\
+    x_i(\theta)\cdot u_i(\theta) &= 0 \\
+    u_i(\theta) & \geq 0 \\
+    t_i(\theta) - x_i(\theta)\cdot p_i(\theta) &= 0
+\end{split}
+\]
+Primal feasibility constraints are omitted because they are part of the centralized problem.
+
+This file has the following methods:
+\begin{itemize}
+    \item GenerateInputs: returns the matrices and vectors to construct the
+    constraints and objective of the optimization problem. Some special elements
+    of this method are:
+    \begin{itemize}
+        \item line 12: generates the set of types \(\Theta\), i.e. all possible
+        combinations of types of suppliers.
+        \item line 27-34: represents computation of \(f_{-i}(\theta_{-i})\).
+    \end{itemize}
+    The outputs of this method are:
+    \begin{itemize}
+        \item nsupp: number of suppliers
+        \item ntypes: number of types for each supplier
+        \item nvars: length of each vector of variables, i.e. \(n\times m\)
+        \item sts: number of scenarios, i.e. \(\lra{\Theta}\)
+        \item bGx: matrix multiplying \(x\) in the inequality IC and IR constraints
+        \item bGt: matrix multiplying \(t\) in the inequality IC and IR constraints
+        \item bh: right-hand side of IR-IC constraints (equal to a vector of zeros)
+        \item bA: matrix multiplying \(x\) in the feasibility constraints
+        \item bb: right-hand side of feasibility constraints (equal to a vector of ones)
+        \item wqt: vector with the probabilities of each scenario in \(\Theta\) to compute the expected value for objective function
+    \end{itemize}
+    \item CheckFeasibility: receives the inputs of the problem and solutions
+    \(x_0, t_0\) and checks whether this solution is feasible for the decentralized problem. To accomplish this, I fix \(x=x_0, t=t_0\) and solve the decentralized problem with objective value equal to 1.
+    \item SolveOptimization: formulates and solves the optimization problem using as inputs the parameters of the problem and version, which is equal to centralized or decentralized.
+    \item SimulateOptimization: solve recursively the optimization problem for different \(\delta\).
+\end{itemize}
+
+
+\section{LDM.jl}
+This file implements the general affine linear demand model. The structure of the variables is equivalent to the previous case. The centralized problem
+follows directly from the paper, while the decentralized problem is implemented
+by adding the following KKT conditions as constraints (in matrix form):
+\[
+\begin{split}
+    p(\theta) - c + Dx(\theta) - u(\theta) + v(\theta) &= 0 \\
+    x(\theta)\cdot u(\theta) &= 0 \\
+    u(\theta) & \geq 0 \\
+    t(\theta) - x(\theta)\cdot p(\theta) &= 0
+\end{split}
+\]
+The methods in this file are the same as in the previous case adapted to the general affine demand model.
+
+
+\section{utilities.jl}
+This file contains a series of methods that are used in the previous files.
+These methods are:
+\begin{itemize}
+    \item combine and combwithrep: used to generate all potential profiles in \(\Theta\).
+    \item ComputeCumulativeDistribution: for a given dictionary of marginal
+    distributions, returns a disctionary of marginal cumulative distributions.
+    \item virtualcost: computes, for a given supplier \(i\) and type \(\theta\), the virtual cost.
+    \item demandLM: computes the demand faced by supplier \(i\) in the general
+    affine model with two suppliers (obtained from close form solution).
+    \item assortmentHM: returns the set of suppliers in the assortment of the
+    Hotelling model for a given price and \(\delta\).
+    \item demandHM: computes the demand faced by supplier \(i\) in the
+    Hoteeling model with two suppliers.
+    \item checkvcincreasing: checks whether the virtual costs are increasing
+    for each supplier.
+    \item checkconditionsHM: check whether the conditions in Theorem 4.1 are
+    satisfied; returns a list with two booleans, one for each condition.
+    \item checkconditionsLM: check whether the conditions in Theorem 5.2 are
+    satisfied; returns a list with two booleans, one for each condition. To
+    find \(d^*\), we use the following heuristic:
+    \begin{enumerate}
+        \item Divide \(\Theta\) in two subsets \(\Theta^S\) and \(\Theta^N\),
+        such that
+        \[
+        \begin{split}
+        \Theta^S &= \lrl{\theta \in \Theta: \; x_i(\theta) > 0, \; \forall i} \\
+        \Theta^N &= \lrl{\theta \in \Theta: \; \exists i \; st.\;  x_i(\theta) = 0}
+        \end{split}
+        \]
+        \item For each \(\theta \in \Theta^S\), compute
+        \[
+        d(\theta) = \max\lrl{\lra{v_i(\theta)-v_i(\theta')}: \theta' \in \Theta^N, \; i=1, \ldots, n}
+        \]
+        \item Define
+        \[
+        d^* = \min\lrl{d(\theta):\; \theta\in \Theta^S}
+        \]
+    \end{enumerate}
+
+\end{itemize}
+
+
+\section{examples.jl}
+This file tests the methods described previously.
+
+
+
+\end{document}

@@ -1,0 +1,208 @@
+% General packages
+\usepackage{amsmath, amsfonts, amsthm,amssymb, mathrsfs}
+\usepackage{enumitem}
+\usepackage[pdftex]{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{bbm}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{mathtools}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{setspace}
+\usepackage{varwidth}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{arrows}
+\usepackage[titletoc]{appendix}
+\usepackage{breakcites}
+\usepackage{authblk}
+\usepackage{mathtools}
+\usepackage{dsfont}
+\usepackage{makecell}
+\usepackage{sansmath}
+\usepackage{scalerel}
+%\usepackage[round]{natbib}
+
+
+
+
+% Special colors
+\definecolor{mygreen}{RGB}{0,128,0}
+\renewcommand\Authfont{\fontsize{12}{14.4}\selectfont}
+\renewcommand\Affilfont{\fontsize{9}{10.8}\itshape}
+
+% Algorithm configuration
+\algnewcommand\algorithmicinput{\textbf{INPUT:}}
+\algnewcommand\INPUT{\item[\algorithmicinput]}
+\algrenewcommand\Return{\State \algorithmicreturn{} }%
+
+\newcommand{\algorithmicbreak}{\textbf{break}}
+\newcommand{\BREAK}{\STATE \algorithmicbreak}
+
+\algtext*{EndWhile}% Remove "end while" text
+\algtext*{EndIf}% Remove "end if" text
+\algtext*{EndFor}% Remove "end for" text
+
+% Some math stuff
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+\DeclarePairedDelimiter{\floor}{\lfloor}{\rfloor}
+\theoremstyle{definition}
+%\newtheorem{defn}{Definition}[chapter]
+%\newtheorem{exmp}{Example}[chapter]
+%\newtheorem{lemma}{Lemma}[chapter]
+%\newtheorem{proposition}{Proposition}[chapter]
+%\newtheorem{thm}{Theorem}[chapter]
+
+\theoremstyle{plain}
+\newtheorem{thm}{Theorem}[section] % reset theorem numbering for each chapter
+
+\theoremstyle{definition}
+\newtheorem{defn}[thm]{Definition} % definition numbers are dependent on theorem numbers
+\newtheorem{exmp}[thm]{Example} % same for example numbers
+\newtheorem{prop}[thm]{Proposition} % definition numbers are dependent on theorem numbers
+\newtheorem{coro}[thm]{Corollary} % definition numbers are dependent on theorem numbers
+\newtheorem{lema}[thm]{Lemma} % definition numbers are dependent on theorem numbers
+\newtheorem{remk}{Remark} % definition numbers are dependent on theorem numbers
+\newtheorem{asmp}{Assumption} % definition numbers are dependent on theorem numbers
+
+% Page configuration
+\setlength{\parindent}{0.0in}
+\setlength{\parskip}{0.08in}
+
+\setlength{\textheight}{8.5in}
+\setlength{\textwidth}{5.9in} %.7
+\setlength{\topmargin}{-.48in}
+\setlength{\oddsidemargin}{.1in} %.29
+
+
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Q}{\mathbb{Q}}
+
+\newcommand{\M}{\mathcal{M}}
+\newcommand{\B}{\mathcal{B}}
+\newcommand{\Lagr}{\mathcal{L}}
+\newcommand{\I}{\mathcal{I}}
+\newcommand{\J}{\mathcal{J}}
+\newcommand{\C}{\mathcal{C}}
+\newcommand{\D}{\mathcal{D}}
+
+
+\newcommand{\lotteries}{\mathcal{P}}
+
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\V}{\mathbb{V}}
+
+
+\newcommand{\ev}[1]{\E\lrc{#1}}
+\newcommand{\var}[1]{Var\lrp{#1}}
+
+
+\newcommand{\bX}{\mathbf{X}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\by}{\mathbf{y}}
+\newcommand{\bz}{\mathbf{z}}
+\newcommand{\bB}{\mathbf{B}}
+
+\newcommand{\hb}{\hat{\beta}}
+
+\newcommand{\be}{\mathbf{e}}
+\newcommand{\bi}{\mathbf{i}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\bM}{\mathbf{M}}
+\newcommand{\bP}{\mathbf{P}}
+
+
+\newcommand{\cX}{\mathcal{X}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cF}{\mathcal{F}}
+\newcommand{\cC}{\mathcal{C}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cB}{\mathcal{B}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cP}{\mathcal{P}}
+\newcommand{\cG}{\mathcal{G}}
+
+\newcommand{\tx}{\tilde{x}}
+
+\newcommand{\hp}{\hat{p}}
+\newcommand{\hf}{\hat{f}}
+\newcommand{\bp}{\bar{p}}
+
+
+\newcommand{\tr}{\intercal}
+
+\newcommand{\htheta}{\hat{\theta}}
+\newcommand{\ind}[1]{\mathds{1}_{\lrl{#1}}}
+
+% delimiters
+\newcommand{\lrp}[1]{\left(#1\right)}
+\newcommand{\lrc}[1]{\left[#1\right]}
+\newcommand{\lrl}[1]{\left\{#1\right\}}
+\newcommand{\lra}[1]{\left|#1\right|}
+\newcommand{\lrn}[1]{\left\lVert#1\right\rVert}
+
+\newcommand{\prob}[1]{P\lrp{#1}}
+\newcommand{\inprob}[1]{P_*\lrp{#1}}
+\newcommand{\outprob}[1]{P^*\lrp{#1}}
+
+\def\to{\textbf{to }}
+
+\newcommand{\definition}[1]{\begin{defn}#1 \end{defn}}
+\newcommand{\theorem}[1]{\begin{thm}#1 \end{thm}}
+\newcommand{\proposition}[1]{\begin{prop}#1 \end{prop}}
+\newcommand{\corollary}[1]{\begin{coro}#1 \end{coro}}
+\newcommand{\lemma}[1]{\begin{lema}#1 \end{lema}}
+\newcommand{\remark}[1]{\begin{remk}#1 \end{remk}}
+\newcommand{\assumption}[1]{\begin{asmp}#1 \end{asmp}}
+\newcommand{\example}[1]{\begin{exmp}#1 \end{exmp}}
+
+\newcommand{\matrices}[2]{\mathcal{M}_{#1 \times #2}}
+
+
+\newcommand{\iif}{\Leftrightarrow}
+\newcommand{\testhyp}{$H_0: \; \theta \in \Theta_0$ vs. $H_1: \; \theta \in \Theta_0^c$ }
+\newcommand{\derpar}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\parder}[2]{\frac{\partial #1}{\partial #2}}
+
+\newcommand{\limit}[3]{\lim_{#1 \rightarrow #2} #3}
+\newcommand{\eqsp}[1]{\begin{equation}\nonumber \begin{split} #1 \end{split}\end{equation}}
+
+\newcommand{\vect}[1]{\lrp{\begin{array}{c} #1 \end{array}}}
+\newcommand{\mxtwo}[1]{\lrc{\begin{array}{cc} #1 \end{array}}}
+\newcommand{\mxthree}[1]{\lrc{\begin{array}{ccc} #1 \end{array}}}
+\newcommand{\piecewise}[1]{\left\{\begin{array}{ll} #1 \end{array}\right.}
+
+
+\newcommand\norm[1]{\left\lVert#1\right\rVert}
+\newcommand{\cupdot}{\mathbin{\mathaccent\cdot\cup}}
+
+
+\newcommand\ubar[1]{\underline{#1}}
+
+\newcommand{\corr}{\rightrightarrows}
+
+
+\newcommand{\suminf}[1]{\sum_{#1}^\infty}
+\newcommand{\cupinf}[1]{\bigcup_{#1}^\infty}
+\newcommand{\capinf}[1]{\bigcap_{#1}^\infty}
+
+\newcommand{\sumn}[2]{\sum_{#1}^{#2}}
+\newcommand{\cupn}[2]{\bigcup_{#1}^{#2}}
+\newcommand{\capn}[2]{\bigcap_{#1}^{#2}}
+
+\newcommand{\salg}{\sigma-\text{algebra}}
+\newcommand{\sfield}{\sigma-\text{field}}
+
+\newcommand{\lsup}[2]{\limsup\limits_{#1\rightarrow #2}}
+\newcommand{\linf}[2]{\liminf\limits_{#1\rightarrow #2}}

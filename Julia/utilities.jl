@@ -245,3 +245,94 @@ function check_conditions_LM(Theta, fm, a, r, gamma)
     end
     return [boo_1, boo_2]
 end
+
+
+function InputsConstraintsCentralized(types, fm)
+    ntypes = length(types)
+    nsupp = length(fm)
+    Theta = combwithrep(nsupp, ntypes)
+
+    # joint distribution based on marginals
+    f = Dict()
+    for perm in Theta
+        f[perm] = prod([fm[i][perm[i]] for i=1:nsupp])
+    end
+
+    # ------------------------------------------------------------------------------
+    # CENTRALIZED WITH IC AND IR
+    # ------------------------------------------------------------------------------
+    nvars = length(Theta)*nsupp # here we include transfers and allocations
+    sts = length(Theta) # size of type space
+
+    # this dict tell us the probability of all other subjects being of their type $f_{-i}(\theta_{-i})$
+    f_woi = Dict(i=>Dict(j=>0.0 for j in Theta) for i in 1:nsupp)
+
+    for i in keys(f_woi)
+        supp_woi = [j for j in 1:nsupp if j!=i]
+        for perm in Theta
+            f_woi[i][perm] = prod([fm[j][perm[j]] for j in supp_woi])
+        end
+    end
+
+    if nsupp == 1
+        f_woi = Dict(i=>Dict(j=>1.0 for j in Theta) for i in 1:nsupp)
+    end
+
+    # individual rationality constraints
+    bIR_x = zeros((ntypes*nsupp, nvars))
+    bIR_t = zeros((ntypes*nsupp, nvars))
+    row = 1
+    for i in 1:nsupp
+        for j in 1:ntypes
+            # we assume that the type of employee i is j
+            # now we find all scenarios where employee i is of type j
+            idxs = [k for k in 1:length(Theta) if Theta[k][i] == j]
+            for k in idxs
+                bIR_x[row, nsupp*(k-1)+i] = -types[j]*f_woi[i][Theta[k]]
+                bIR_t[row, nsupp*(k-1)+i] = f_woi[i][Theta[k]]
+            end
+            row=row+1
+        end
+    end
+
+    bIC_x = zeros((ntypes*(ntypes-1)*nsupp,nvars))
+    bIC_t = zeros((ntypes*(ntypes-1)*nsupp,nvars))
+    row = 1
+    for i in 1:nsupp
+        for j in 1:ntypes
+            other_types = [k for k in 1:ntypes if k!=j]
+            for k in other_types
+                # print j, other_types, row
+                idxs_j = [l for l in 1:length(Theta) if Theta[l][i] == j]
+                idxs_k = [l for l in 1:length(Theta) if Theta[l][i] == k]
+                for l in idxs_j
+                    bIC_x[row, nsupp*(l-1)+i] = -types[j]*f_woi[i][Theta[l]]
+                    bIC_t[row, nsupp*(l-1)+i] = f_woi[i][Theta[l]]
+                end
+                for l in idxs_k
+                    bIC_x[row, nsupp*(l-1)+i] = types[j]*f_woi[i][Theta[l]]
+                    bIC_t[row, nsupp*(l-1)+i] = -f_woi[i][Theta[l]]
+                end
+                row+=1
+            end
+        end
+    end
+
+    bG_x = vcat(bIR_x, bIC_x)
+    bG_t = vcat(bIR_t, bIC_t)
+
+    bA = zeros((length(Theta), nvars))
+    bh = zeros(size(bG_x)[1])
+    bb = ones(length(Theta))
+
+    wq_t = zeros(nvars)
+    q_t = zeros(nvars)
+
+    for i in 1:length(Theta)
+        bA[i,nsupp*(i-1)+1:nsupp*i] = ones(nsupp)
+        wq_t[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*ones(nsupp)
+        q_t[nsupp*(i-1)+1:nsupp*i] = ones(nsupp)
+    end
+
+    return nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t
+end
