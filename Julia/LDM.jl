@@ -195,8 +195,8 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     end
 
     if x0 != nothing
-        @variable(m, x[i=1:nvars]==x0[i])
-        @variable(m, t[i=1:nvars]==t0[i])
+        @variable(m, x[i=1:nvars]>=0, start=x0[i])
+        @variable(m, t[i=1:nvars]>=0, start=t0[i])
     else
         @variable(m, x[1:nvars]>=0)
         @variable(m, t[1:nvars]>=0)
@@ -211,6 +211,11 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     @constraint(m, z <=  wc_x'*x - wq_t'*t - 0.5*x'*wD*x )
 
     if version == "decentralized"
+        # if x0 != nothing
+        #
+        # else
+        #     @variable(m, p[1:nvars]>=0)
+        # end
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
         @variable(m, v[1:nvars])
@@ -274,7 +279,6 @@ function SimulateOptimization(types, fm, a_j, gamma_ii, gamma_ij, elastic=false)
                         outstr = string(a_j[i1], ";", a_j[i2], ";", gamma_ii[j1], ";", gamma_ii[j2], ";", gamma_ij[k], ";",
                                         obj_cent, ";", obj_dec, ";", boo)
                         write(f, "$outstr \n")
-                        exit()
                     end
                 end
             end
