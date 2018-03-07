@@ -190,8 +190,12 @@ function check_conditions_HM(Theta, fm, loc, delta)
     return [boo_1, boo_2]
 end
 
-function check_conditions_LM(Theta, fm, a, r, gamma)
+function check_conditions_LM(types, fm, a, r, gamma)
     # check conditions for Theorem 5.2
+    ntypes = length(types)
+    nsupp = length(fm)
+    Theta = combwithrep(nsupp, ntypes)
+
     V = check_vc_increasing(fm) # V[i,j] = virtual cost of supplier i for type j
     nsupp, ntypes = size(V)[1], size(V)[2]
 
@@ -246,6 +250,22 @@ function check_conditions_LM(Theta, fm, a, r, gamma)
     return [boo_1, boo_2]
 end
 
+function check_diagonal_dominant(A)
+    boos = 2*diag(abs.(A)).>sum(abs.(A),2)
+    if prod(boos) == false
+        println("***WARNING: the matrix provided is not strictly diagonal dominant")
+    end
+    return prod(boos)
+end
+
+function check_consistency_demand_matrix(A)
+    if sum(diag(A)) < 2*A[1,2]
+        println("***ERROR: does not satisfy consistency check")
+        return false
+    else
+        return true
+    end
+end
 
 function InputsConstraintsCentralized(types, fm)
     ntypes = length(types)
