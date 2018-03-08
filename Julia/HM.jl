@@ -206,21 +206,20 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     if version == "decentralized"
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
-        @variable(m, v[1:nvars])
-        # @constraint(m, kkt_opt[i=1:nsupp, j=1:sts],
-        #         p[(j-1)*nsupp+i] - u[(j-1)*nsupp+i] + v[(j-1)*nsupp+i]
-        #         + delta*( sum( ( sum( x[s] for s=((j-1)*nsupp+1):r)-loc[r-(j-1)*nsupp] ) for r=((j-1)*nsupp+i):(j*nsupp) ) )
-        #         - delta*( sum( ( loc[r+1-(j-1)*nsupp] - sum( x[s] for s=((j-1)*nsupp+1):r) ) for r=((j-1)*nsupp+i):(j*nsupp-1) ) ) == 0)
-        @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
+        if elastic == false
+            @variable(m, v[1:nvars])
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+        else
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
+        end
         @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
         @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-        @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+
     end
 
     @objective(m, Max, z)
 
-    # print(m)
-    # exit()
     status = solve(m)
     obj = -getobjectivevalue(m)
     x_vals = getvalue(x)
@@ -232,50 +231,39 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     println("Objective value: ", getobjectivevalue(m))
     println("Allocations: ", getvalue(x))
     println("Transfers: ", getvalue(t))
-    if version == "decentralized"
-        println("Prices: ", getvalue(p))
-        println("Slacks1: ", getvalue(u))
-        println("Slacks2: ", getvalue(v))
-    end
     println("===============================")
     return obj, transfers, x_vals, t_vals
 end
 
-function SimulateOptimization(types, fm, loc, deltas, version, elastic=false)
+function SimulateOptimization(types, fm, loc, deltas, elastic=false)
     println("Generating Inputs")
     nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-    objs, trans = [],[]
+    outfile = string("outputs/simulations_outcome_HM_", join(fm[1],'_'))
+    if elastic
+        outfile = string(outfile, "_elastic.txt")
+    else
+        outfile = string(outfile, "_inelastic.txt")
+    end
+    f = open(outfile, "w")
     for i=1:length(deltas)
         delta = deltas[i]
         println("Solving the problem for ", delta)
-        if version == "decentralized"
-            # obtain initial solution
-            obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
-            obj, tra, xs, ts = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic, x_cent, t_cent)
-        else
-            obj, tra, xs, ts = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic)
-        end
-        push!(objs, obj)
-        push!(trans, tra)
+        obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
+        obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
+        str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
+        str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
+        outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
+                               ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
+        write(f, "$outstr \n")
     end
-    println(objs)
-    println(trans)
-    plot(deltas, objs, color="blue", linewidth=2.0, linestyle="--")
-    plot(deltas, trans, color="red", linewidth=2.0, linestyle="--")
-    if elastic
-        outfile = string("plots/objective_and_transfers_HM_elastic_", version, ".pdf")
-    else
-        outfile = string("plots/objective_and_transfers_HM_inelastic_", version, ".pdf")
-    end
-    savefig(outfile)
-    show()
+    close(f)
 end
 
 
 # IMPORTANT: types must be sorted in increasing order
 ### INPUTS ###
 types = Dict(1=>10, 2=>12)
-fm = Dict(1=>[0.5,0.5],2=>[0.5,0.5])
+fm = Dict(1=>[0.6,0.4],2=>[0.6,0.4])
 # types = Dict(1=>0.1, 2=>0.2)
 # fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 # types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
@@ -288,13 +276,25 @@ delta = 3
 deltas = [i for i=0.5:0.5:6]
 
 version = "decentralized" # or decentralized
-elastic = true
+elastic = false
 
+
+elasticities = [false]
+distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
 
 # nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
 # obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
 # obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
-SimulateOptimization(types, fm, loc, deltas, version, elastic)
+
+for e=1:length(elasticities)
+    elastic = elasticities[e]
+    for d=1:length(distributions)
+        distr = distributions[d]
+        fm = Dict(1=>distr,2=>distr)
+        SimulateOptimization(types, fm, loc, deltas, elastic)
+    end
+end
+
 
 exit()
 

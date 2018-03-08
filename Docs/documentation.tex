@@ -74,10 +74,22 @@ This file has the following methods:
     The outputs of this method are:
     \begin{itemize}
         \item nsupp: number of suppliers
-        \item ntypes: number of types for each supplier
+        \item ntypes: number of types for each supplier;
         \item nvars: length of each vector of variables, i.e. \(n\times m\)
         \item sts: number of scenarios, i.e. \(\lra{\Theta}\)
-        \item bGx: matrix multiplying \(x\) in the inequality IC and IR constraints
+        \item bGx: matrix multiplying \(x\) in the inequality IC and IR constraints.
+        This matrix is organized as follows:
+        \begin{itemize}
+            \item The first nsupp \(\times\) ntypes rows are IR constraints, ordered
+            lexicographically by \((i, \theta_i)\) in increasing order, where \(i\) is the supplier
+            and \(\theta_i\) is his type. For example, in a 2 supplier-2 types
+            example, the first row corresponds to supplier 1 with low type, then
+            supplier 1 with high type, then supplier 2 with low type, and
+            finally supplier 2 with high type.
+            \item The last nsupp \(\times\) ntypes \(\times\) (ntypes-1) rows correspond
+            to IC constraints, ordered lexicographically by \((i, \theta_i, \theta_i')\) in
+            increasing order.
+        \end{itemize}
         \item bGt: matrix multiplying \(t\) in the inequality IC and IR constraints
         \item bh: right-hand side of IR-IC constraints (equal to a vector of zeros)
         \item bA: matrix multiplying \(x\) in the feasibility constraints
