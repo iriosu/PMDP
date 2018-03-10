@@ -279,7 +279,7 @@ version = "decentralized" # or decentralized
 elastic = false
 
 
-elasticities = [false]
+elasticities = [true, false]
 distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
 
 # nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
@@ -298,8 +298,8 @@ end
 
 exit()
 
-nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized")
+# nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
+# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized")
 
 
 
@@ -320,5 +320,3 @@ obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts
 # Objective value: -12.458331756709534
 # Allocations: [0.833335, 0.166665, 0.833335, 0.166665, 0.0, 1.0, 0.0, 1.0]
 # Transfers: [8.33334, 1.99998, 8.33335, 1.99998, 0.0, 12.0, 0.0, 12.0]
-
-exit()

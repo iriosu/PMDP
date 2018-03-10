@@ -160,7 +160,9 @@ types = Dict(1=>10, 2=>12)
 #     end
 # end
 
-own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.4_0.6_inelastic.txt", types)
+own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.9_0.1_inelastic.txt", types)
+println(own_e)
+println(own_p)
 for k in keys(own_e)
     for i in keys(own_e[k])
         println(k, " ", i, " ", "cent", " ", own_e[k][i]["cent"])
