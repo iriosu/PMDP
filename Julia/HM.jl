@@ -169,7 +169,7 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
         m = Model(solver=GurobiSolver(MIPGap = 1e-12))
     elseif version == "decentralized"
         m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 5000,
+                                      ms_enable = 1, ms_maxsolves = 10000,
                                       algorithm = KTR_ALG_ACT_CG,
                                       outmode = KTR_OUTMODE_SCREEN,
                                       KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
@@ -244,7 +244,9 @@ function SimulateOptimization(types, fm, loc, deltas, elastic=false)
     else
         outfile = string(outfile, "_inelastic.txt")
     end
+    println(outfile)
     f = open(outfile, "w")
+    out = []
     for i=1:length(deltas)
         delta = deltas[i]
         println("Solving the problem for ", delta)
@@ -255,15 +257,19 @@ function SimulateOptimization(types, fm, loc, deltas, elastic=false)
         outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
                                ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
         write(f, "$outstr \n")
+        push!(out, "$outstr \n")
     end
     close(f)
+    for i=1:length(out)
+        println(out[i])
+    end
 end
 
 
 # IMPORTANT: types must be sorted in increasing order
 ### INPUTS ###
 types = Dict(1=>10, 2=>12)
-fm = Dict(1=>[0.6,0.4],2=>[0.6,0.4])
+fm = Dict(1=>[0.1,0.9],2=>[0.1,0.9])
 # types = Dict(1=>0.1, 2=>0.2)
 # fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 # types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
@@ -272,19 +278,29 @@ V = check_vc_increasing(fm)
 
 # alphas
 loc = [0,1]
-delta = 3
+delta = 5
 deltas = [i for i=0.5:0.5:6]
 
 version = "decentralized" # or decentralized
 elastic = false
 
 
-elasticities = [true, false]
+elasticities = [true] #, false
 distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
 
 # nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
 # obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
 # obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
+nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
+obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
+obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
+str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
+str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
+outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
+                       ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
+println(outstr)
+exit()
+
 
 for e=1:length(elasticities)
     elastic = elasticities[e]

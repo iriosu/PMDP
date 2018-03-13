@@ -1,3 +1,4 @@
+using PyPlot
 
 include("utilities.jl")
 function ReadOutputHM(infile)
@@ -116,12 +117,13 @@ function Elasticities(infile, types)
     cross_e = Dict(k=>Dict(pairs[i]=>Dict("cent"=>0.0, "dec"=>0.0) for i=1:length(pairs)) for k in keys(sol))
     own_p = Dict(k=>Dict(i=>Dict("cent"=>0.0, "dec"=>0.0) for i=1:nsupp) for k in keys(sol))
     cross_p = Dict(k=>Dict(pairs[i]=>Dict("cent"=>0.0, "dec"=>0.0) for i=1:length(pairs)) for k in keys(sol))
-
     for k in keys(sol)
-        println("Processing delta = ", k)
         for s=1:length(Theta)
             theta = [types[Theta[s][i]] for i=1:nsupp]
             for i=1:nsupp
+                println(k ," ", i, " ", s, " ", sol[k]["x_cent"][nsupp*(s-1)+i])
+                println(k ," ", i, " ", s, " ", sol[k]["t_cent"][nsupp*(s-1)+i])
+                # println(k ," ", i, " ", s, " ", nsupp*(s-1)+i, " ", sol[k]["x_cent"])
                 if sol[k]["x_cent"][nsupp*(s-1)+i] > 1e-2
                     own_e[k][i]["cent"] += -f[Theta[s]] * 0.5 * k * sol[k]["t_cent"][nsupp*(s-1)+i]/(sol[k]["x_cent"][nsupp*(s-1)+i]^2)
                     own_p[k][i]["cent"] += f[Theta[s]]
@@ -147,8 +149,216 @@ function Elasticities(infile, types)
     return own_e, cross_e, own_p, cross_p
 end
 
+function PlotObjectives(distr, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join(dst,'_')
+        infile = string("outputs/simulations_outcome_HM_", join(dst,'_'))
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+        end
+        inls = ReadOutputHM(infile)
+        ds = sort([i for i in keys(inls)])
+        println([inls[s]["obj_cent"] for s in ds])
+        println([inls[s]["obj_dec"] for s in ds])
+        if version == "centralized"
+            plot(ds, [inls[s]["obj_cent"] for s in ds], linestyle="--",marker="o", label=strdist)
+        else
+            plot([s for s in ds if inls[s]["obj_dec"]>0.1], [inls[s]["obj_dec"] for s in ds if inls[s]["obj_dec"]>0.1], linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if version == "centralized"
+        outstr = string("plots/obj_cent_HM_", els, ".pdf")
+    else
+        outstr = string("plots/obj_dec_HM_", els, ".pdf")
+    end
+    xlabel(L"$\delta$")
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function PlotAvgDemand(distr, types, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        fm = Dict(1=>dst, 2=>dst)
+        strdist = join(dst,'_')
+        infile = string("outputs/simulations_outcome_HM_", join(dst,'_'))
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+        end
+        sol = ReadOutputHM(infile)
+
+        nsupp, ntypes, nvars, sts, G_x, G_t, h, A, b, q_t, f, Theta = InputsConstraintsCentralized(types, fm)
+
+        skeys =  sort([i for i in keys(sol)])
+
+        d1_cent = [sum([sol[skeys[r]]["x_cent"][nsupp*(s-1)+1]*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
+        d1_dec = [sum([sol[skeys[r]]["x_dec"][nsupp*(s-1)+1]*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
+        if version == "centralized"
+            plot(skeys, d1_cent, linestyle="--",marker="o", label=strdist)
+        else
+            plot(skeys, d1_dec, linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if version == "centralized"
+        outstr = string("plots/avg_demand_cent_HM_", els, ".pdf")
+    else
+        outstr = string("plots/avg_demand_dec_HM_", els, ".pdf")
+    end
+    xlabel(L"$\delta$")
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function PlotNumberActiveSuppliers(distr, types, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        fm = Dict(1=>dst, 2=>dst)
+        strdist = join(dst,'_')
+        infile = string("outputs/simulations_outcome_HM_", join(dst,'_'))
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+        end
+        sol = ReadOutputHM(infile)
+
+        nsupp, ntypes, nvars, sts, G_x, G_t, h, A, b, q_t, f, Theta = InputsConstraintsCentralized(types, fm)
+
+        skeys =  sort([i for i in keys(sol)])
+
+        d1_cent = [sum([ sum([sol[skeys[r]]["x_cent"][nsupp*(s-1)+1]> 1e-2])*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
+        d1_dec = [sum([ sum([sol[skeys[r]]["x_dec"][nsupp*(s-1)+1]> 1e-2])*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
+        if version == "centralized"
+            plot(skeys, d1_cent, linestyle="--",marker="o", label=strdist)
+        else
+            plot(skeys, d1_dec, linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if version == "centralized"
+        outstr = string("plots/active_suppliers_cent_HM_", els, ".pdf")
+    else
+        outstr = string("plots/active_suppliers_dec_HM_", els, ".pdf")
+    end
+    xlabel(L"$\delta$")
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function PlotOwnElasticities(distr, types, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join(dst,'_')
+        infile = string("outputs/simulations_outcome_HM_", join(dst,'_'))
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+        end
+        own_e, cross_e, own_p, cross_p = Elasticities(infile, types)
+        ds = sort([i for i in keys(own_e)])
+        els_cent = [own_e[s][1]["cent"]/own_p[s][1]["cent"] for s in ds]
+        els_dec = [own_e[s][1]["dec"]/own_p[s][1]["dec"] for s in ds]
+        println("===>", [own_e[s][1]["cent"]/own_p[s][1]["cent"] for s in ds])
+        println("===>", [own_e[s][1]["dec"]/own_p[s][1]["dec"] for s in ds])
+        if version == "centralized"
+            plot([i for i=1:length(els_cent) if els_cent[i] > -100], [els_cent[i] for i=1:length(els_cent) if els_cent[i] > -100], linestyle="--",marker="o", label=strdist)
+        else
+            plot([i for i=1:length(els_dec) if els_dec[i] > -100], [els_dec[i] for i=1:length(els_dec) if els_dec[i] > -100], linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if version == "centralized"
+        outstr = string("plots/own_elast_cent_HM_", els, ".pdf")
+    else
+        outstr = string("plots/own_elast_dec_HM_", els, ".pdf")
+    end
+    xlabel(L"$\delta$")
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
 #### MAIN ####
 types = Dict(1=>10, 2=>12)
+distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
+elastic = false
+version = "centralized"
+# PlotObjectives(distributions, elastic, version)
+# PlotOwnElasticities(distributions, types, elastic, version)
+# PlotAvgDemand(distributions, types, elastic, version)
+PlotNumberActiveSuppliers(distributions, types, elastic, version)
+# own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt", types)
+#
+# sol = ReadOutputHM("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt")
+# for k in keys(sol)
+#     println("============================")
+#     println("delta = ", k)
+#     println("============================")
+#     println(k, " ", sol[k]["x_cent"])
+#     println(k, " ", sol[k]["x_dec"])
+# end
+
+
+
 # out = ReadOutputHM("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt")
 # CheckBindingIC("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt", types)
 # outprob = CheckExPostIR("outputs/simulations_outcome_HM_0.4_0.6_inelastic.txt", types)
@@ -160,19 +370,11 @@ types = Dict(1=>10, 2=>12)
 #     end
 # end
 
-own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.9_0.1_inelastic.txt", types)
-println(own_e)
-println(own_p)
-for k in keys(own_e)
-    for i in keys(own_e[k])
-        println(k, " ", i, " ", "cent", " ", own_e[k][i]["cent"])
-    end
-end
-
-# for k in keys(out)
-#     println(k, " ", out[k]["obj_cent"], " ", out[k]["obj_dec"])
-#     println(out[k]["x_cent"])
-#     println(out[k]["x_dec"])
-#     println(out[k]["t_cent"])
-#     println(out[k]["t_dec"])
+# own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.9_0.1_inelastic.txt", types)
+# println(own_e)
+# println(own_p)
+# for k in keys(own_e)
+#     for i in keys(own_e[k])
+#         println(k, " ", i, " ", "cent", " ", own_e[k][i]["cent"])
+#     end
 # end

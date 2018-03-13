@@ -71,8 +71,7 @@ function asssortment_HM(p, loc, delta)
     for i in 1:length(p)
         # if p[i] < min(p[j] + delta*abs(loc[j]-loc[i]) for j=1:length(p) if j!=i)
         aux = min([p[j] + delta*abs(loc[j]-loc[i]) for j=1:length(p) if j!=i]...)
-        println(i, " ", aux)
-        if p[i] < aux
+        if p[i] <= aux
             push!(out,i)
         end
     end

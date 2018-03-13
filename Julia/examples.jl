@@ -7,10 +7,14 @@ include("utilities.jl")
 # fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 # types = Dict(1=>10, 2=>12)
 # fm = Dict(1=>[0.5,0.5],2=>[0.5,0.5])
-types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
-fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
+# types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
+# fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
 
-model_to_test = "LM" # "HM" for Hotelling mdel or "LM" for linear model
+types = Dict(1=>10, 2=>12)
+# fm = Dict(1=>[0.1,0.9],2=>[0.1,0.9])
+fm = Dict(1=>[0.5,0.5],2=>[0.5,0.5])
+
+model_to_test = "HM" # "HM" for Hotelling mdel or "LM" for linear model
 
 ### Linear Model Params ###
 # alphas
@@ -24,7 +28,7 @@ gamma = 0.5
 
 ### Hotelling Model Params ###
 L = [0,1]
-delta = 1
+delta = 2
 
 ### -------------------------- ###
 ### MAIN ###
@@ -37,16 +41,19 @@ Theta = combwithrep(nsupp, ntypes)
 
 # check for assumptions and conditions
 V = check_vc_increasing(fm)
-boos = check_conditions_HM(Theta, fm, L, delta)
-boos = check_conditions_LM(Theta, fm, a, r, gamma)
+
+
 
 
 # compute cumulative distribution
 Fm = ComputeCumulativeDistribution(fm)
 
 total_cost = 0
+total_objective = 0
 if model_to_test == "HM"
+    boos = check_conditions_HM(Theta, fm, L, delta)
     for i in 1:length(Theta)
+        println("========= Scenario ", i, " ==========")
         prob = prod([fm[j][Theta[i][j]] for j=1:nsupp])
         p_s = [V[j,Theta[i][j]] for j=1:nsupp]
 
@@ -57,13 +64,16 @@ if model_to_test == "HM"
             push!(d_s, daux)
         end
         total_cost = total_cost + prob*d_s'*p_s
-        println("========= Scenario ", i, " ==========")
+        total_objective = total_objective + prob*d_s'*p_s + 0.5*delta*prob*sum([d_s[j]^2 for j=1:nsupp])
         println("Types: ", Theta[i])
+        println("Probability: ", prob)
         println("Virtual costs: ", p_s)
         println("Demands: ", d_s)
     end
 elseif model_to_test == "LM"
+    boos = check_conditions_LM(Theta, fm, a, r, gamma)
     for i in 1:length(Theta)
+        println("========= Scenario ", i, " ==========")
         prob = prod([fm[j][Theta[i][j]] for j=1:nsupp])
         p_s = [V[j,Theta[i][j]] for j=1:nsupp]
         d_s = []
@@ -72,7 +82,6 @@ elseif model_to_test == "LM"
             push!(d_s, daux)
         end
         total_cost = total_cost + prob*d_s'*p_s
-        println("========= Scenario ", i, " ==========")
         println("Types: ", Theta[i])
         println("Virtual costs: ", p_s)
         println("Demands: ", d_s)
@@ -83,27 +92,6 @@ end
 
 println("")
 println("=================================")
-println("TOTAL COST: ", total_cost)
+println("TOTAL OBJECTIVE: ", total_objective)
+println("TOTAL TRANSFERS: ", total_cost)
 println("=================================")
-
-# for i in 1:length(Theta)
-#     prob = prod([fm[j][Theta[i][j]] for j=1:nsupp])
-#     p_s = []
-#     for j=1:nsupp
-#         idx = Theta[i][j]
-#         v_j = virtual_cost(theta, fm, Fm, j, idx)
-#         push!(p_s, v_j)
-#     end
-#     Q = asssortment_HM(p_s, L, delta)
-#     d_s = []
-#     for j=1:nsupp
-#         daux = demand_HM(p_s, L, delta, j, Q)
-#         push!(d_s, daux)
-#     end
-#     total_cost = total_cost + prob*d_s'*p_s
-#     println("========= Scenario ", i, " ==========")
-#     println("Types: ", Theta[i])
-#     println("Virtual costs: ", p_s)
-#     println("Demands: ", d_s)
-# end
-#
