@@ -93,7 +93,56 @@ function GenerateInputs(types, fm)
         q_t[nsupp*(i-1)+1:nsupp*i] = ones(nsupp)
     end
 
-    return nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t
+    return nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, f, Theta
+end
+
+function GenerateExPostInputs(types, Theta, nsupp, nvars)
+    ntypes = length(types)
+    # individual rationality constraints
+    bIR_x = zeros((ntypes*nsupp, nvars))
+    bIR_t = zeros((ntypes*nsupp, nvars))
+    row = 1
+    for i in 1:nsupp
+        for j in 1:ntypes
+            # we assume that the type of employee i is j
+            # now we find all scenarios where employee i is of type j
+            idxs = [k for k in 1:length(Theta) if Theta[k][i] == j]
+            for k in idxs
+                bIR_x[row, nsupp*(k-1)+i] = -types[j]
+                bIR_t[row, nsupp*(k-1)+i] = 1
+            end
+            row=row+1
+        end
+    end
+
+    bIC_x = zeros((ntypes*(ntypes-1)*nsupp,nvars))
+    bIC_t = zeros((ntypes*(ntypes-1)*nsupp,nvars))
+    row = 1
+    for i in 1:nsupp
+        for j in 1:ntypes
+            other_types = [k for k in 1:ntypes if k!=j]
+            for k in other_types
+                # print j, other_types, row
+                idxs_j = [l for l in 1:length(Theta) if Theta[l][i] == j]
+                idxs_k = [l for l in 1:length(Theta) if Theta[l][i] == k]
+                for l in idxs_j
+                    bIC_x[row, nsupp*(l-1)+i] = -types[j]
+                    bIC_t[row, nsupp*(l-1)+i] = 1
+                end
+                for l in idxs_k
+                    bIC_x[row, nsupp*(l-1)+i] = types[j]
+                    bIC_t[row, nsupp*(l-1)+i] = -1
+                end
+                row+=1
+            end
+        end
+    end
+
+    bG_x = vcat(bIR_x, bIC_x)
+    bG_t = vcat(bIR_t, bIC_t)
+    bh = zeros(size(bG_x)[1])
+
+    return bG_x, bG_t, bh
 end
 
 function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic=false, x0=nothing, t0=nothing)
@@ -164,7 +213,7 @@ function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic=false, x0=nothing, t0=nothing)
+function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
     if version == "centralized"
         m = Model(solver=GurobiSolver(MIPGap = 1e-12))
     elseif version == "decentralized"
@@ -194,7 +243,13 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     @variable(m, z)
 
     # constraints centralized version: IR, IC, feas
-    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
+    if expostir == true
+        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
+        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
+    else
+        @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
+    end
+
     if elastic == false
         @constraint(m, bA*x .== bb) # feas
     end
@@ -235,9 +290,9 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     return obj, transfers, x_vals, t_vals
 end
 
-function SimulateOptimization(types, fm, loc, deltas, elastic=false)
+function SimulateOptimization(types, fm, loc, deltas, elastic=false, expotir=false)
     println("Generating Inputs")
-    nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
+    nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
     outfile = string("outputs/simulations_outcome_HM_", join(fm[1],'_'))
     if elastic
         outfile = string(outfile, "_elastic.txt")
@@ -250,8 +305,8 @@ function SimulateOptimization(types, fm, loc, deltas, elastic=false)
     for i=1:length(deltas)
         delta = deltas[i]
         println("Solving the problem for ", delta)
-        obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
-        obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
+        obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", elastic, expostir)
+        obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "decentralized", elastic, expostir, x_cent, t_cent)
         str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
         str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
         outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
