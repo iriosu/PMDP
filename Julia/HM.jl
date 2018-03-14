@@ -99,9 +99,11 @@ end
 function GenerateExPostInputs(types, Theta, nsupp, nvars)
     ntypes = length(types)
     # individual rationality constraints
-    bIR_x = zeros((ntypes*nsupp, nvars))
-    bIR_t = zeros((ntypes*nsupp, nvars))
+    sts = length(Theta)
+    bIR_x = zeros((sts*nsupp, nvars))
+    bIR_t = zeros((sts*nsupp, nvars))
     row = 1
+
     for i in 1:nsupp
         for j in 1:ntypes
             # we assume that the type of employee i is j
@@ -110,39 +112,13 @@ function GenerateExPostInputs(types, Theta, nsupp, nvars)
             for k in idxs
                 bIR_x[row, nsupp*(k-1)+i] = -types[j]
                 bIR_t[row, nsupp*(k-1)+i] = 1
-            end
-            row=row+1
-        end
-    end
-
-    bIC_x = zeros((ntypes*(ntypes-1)*nsupp,nvars))
-    bIC_t = zeros((ntypes*(ntypes-1)*nsupp,nvars))
-    row = 1
-    for i in 1:nsupp
-        for j in 1:ntypes
-            other_types = [k for k in 1:ntypes if k!=j]
-            for k in other_types
-                # print j, other_types, row
-                idxs_j = [l for l in 1:length(Theta) if Theta[l][i] == j]
-                idxs_k = [l for l in 1:length(Theta) if Theta[l][i] == k]
-                for l in idxs_j
-                    bIC_x[row, nsupp*(l-1)+i] = -types[j]
-                    bIC_t[row, nsupp*(l-1)+i] = 1
-                end
-                for l in idxs_k
-                    bIC_x[row, nsupp*(l-1)+i] = types[j]
-                    bIC_t[row, nsupp*(l-1)+i] = -1
-                end
-                row+=1
+                row=row+1
             end
         end
     end
+    bh = zeros(size(bIR_x)[1])
 
-    bG_x = vcat(bIR_x, bIC_x)
-    bG_t = vcat(bIR_t, bIC_t)
-    bh = zeros(size(bG_x)[1])
-
-    return bG_x, bG_t, bh
+    return bIR_x, bIR_t, bh
 end
 
 function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic=false, x0=nothing, t0=nothing)
@@ -218,7 +194,7 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
         m = Model(solver=GurobiSolver(MIPGap = 1e-12))
     elseif version == "decentralized"
         m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 10000,
+                                      ms_enable = 1, ms_maxsolves = 500,
                                       algorithm = KTR_ALG_ACT_CG,
                                       outmode = KTR_OUTMODE_SCREEN,
                                       KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
@@ -242,21 +218,22 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     @variable(m, k[1:nvars])
     @variable(m, z)
 
-    # constraints centralized version: IR, IC, feas
-    if expostir == true
-        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
-        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
-    else
-        @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
-    end
-
-    if elastic == false
-        @constraint(m, bA*x .== bb) # feas
-    end
+    # normal constraints
     @constraint(m, z <=  wq_t'*k - wq_t'*t)
     @constraint(m, def_k[i=1:nsupp, j=1:sts],
                 -0.5*delta*((loc[i] - sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i-1)))^2
                             + (sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i))-loc[i])^2 ) - k[(j-1)*nsupp+i]>= 0)
+    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
+
+    # special constraints
+    if expostir == true
+        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
+        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
+    end
+    if elastic == false
+        @constraint(m, bA*x .== bb) # feas
+    end
+
 
     if version == "decentralized"
         @variable(m, p[1:nvars]>=0)
@@ -275,6 +252,9 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
 
     @objective(m, Max, z)
 
+    # print(m)
+    # exit()
+
     status = solve(m)
     obj = -getobjectivevalue(m)
     x_vals = getvalue(x)
@@ -290,10 +270,13 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     return obj, transfers, x_vals, t_vals
 end
 
-function SimulateOptimization(types, fm, loc, deltas, elastic=false, expotir=false)
+function SimulateOptimization(types, fm, loc, deltas, elastic=false, expostir=false)
     println("Generating Inputs")
     nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
     outfile = string("outputs/simulations_outcome_HM_", join(fm[1],'_'))
+    if expostir
+        outfile = string(outfile, "_expostir")
+    end
     if elastic
         outfile = string(outfile, "_elastic.txt")
     else
@@ -338,36 +321,59 @@ deltas = [i for i=0.5:0.5:6]
 
 version = "decentralized" # or decentralized
 elastic = false
+expostir = true
 
-
-elasticities = [true] #, false
+elasticities = [false] #, false
 distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
 
-# nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
-# obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
-nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized", elastic)
-obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", elastic, x_cent, t_cent)
-str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
-str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
-outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
-                       ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
-println(outstr)
-exit()
 
+nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
+epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
+# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", elastic, expostir)
+# obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "decentralized", elastic, expostir, x_cent, t_cent)
+# str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
+# str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
+# outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
+#                        ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
+# println(outstr)
+# exit()
+
+x0 = [0.500659693, 0.499340307, 0.999999979,  0, 0, 0.999999979, 0.501219235, 0.498780765]
+t0 = [104.0285416, 103.9714553, 0, 53.86832286, 54.13167772, 0, 0, 0]
+t1 = [8.490962389, 7.668715902, 10.61189003, 0, 0, 10.70370043, 6.000249467, 5.999750571]
+IR = epG_x*x0 + epG_t*t1
+
+println(IR)
+println(eph)
+println(IR .>= eph)
+expt0 = 0
+expt1 = 0
+for s=1:length(Theta)
+    println(s, " ", fth[Theta[s]], " ", expt0, " ", expt1)
+    expt0 = expt0 + fth[Theta[s]]*(t0[nsupp*(s-1)+1]+t0[nsupp*(s-1)+2])
+    expt1 = expt1 + fth[Theta[s]]*(t1[nsupp*(s-1)+1]+t1[nsupp*(s-1)+2])
+end
+println("expected transfer t0 = ", expt0)
+println("expected transfer t1 = ", expt1)
+exit()
 
 for e=1:length(elasticities)
     elastic = elasticities[e]
     for d=1:length(distributions)
         distr = distributions[d]
         fm = Dict(1=>distr,2=>distr)
-        SimulateOptimization(types, fm, loc, deltas, elastic)
+        SimulateOptimization(types, fm, loc, deltas, elastic, expostir)
     end
 end
 
 
 exit()
+
+
+
+
+
+
 
 # nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
 # obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized")
