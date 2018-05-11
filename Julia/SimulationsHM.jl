@@ -8,10 +8,14 @@ include("HM.jl")
 # SIMULATION METHODS
 # ----------------
 # Two suppliers, asymmetric (i.e. parameters can be different)
-function SimulateTwoSuppliers(types, fm, loc, deltas, elastic=false, expostir=false)
+function SimulateTwoSuppliers(types, fm, loc, deltas, elastic=false, expostir=false, outdir="outputs")
+    if !isdir(outdir)
+        mkdir(outdir)
+    end
+
     println("Generating Inputs")
     nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
-    outfile = string("outputs/simulations_outcome_HM_", join(fm[1],'_'))
+    outfile = string(outdir,"/simulations_outcome_HM_", join(fm[1],'_'))
     if expostir
         outfile = string(outfile, "_expostir")
     end

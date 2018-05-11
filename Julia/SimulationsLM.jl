@@ -8,7 +8,7 @@ include("LDM.jl")
 # SIMULATION METHODS
 # ----------------
 # Two suppliers, asymmetric (i.e. parameters can be different)
-function SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=false, expostir=false)
+function SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=false, expostir=false, outdir="outputs")
     ## OVERVIEW ##
     # This method simulates a two supplier general affine model for different combinations of
     # values of qualities and demand matrices. It considers assymetric settings, i.e.
@@ -23,6 +23,10 @@ function SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elas
     # 5. gamma_ij = list of possible values in the off-diagonal of demand matrix
     # 6. elastic = boolean; true => elastic demand, false=> inelastic demand
     # 7. expostir = boolean; true => expostir constraints, false=> only interim constraints
+
+    if !isdir(outdir)
+        mkdir(outdir)
+    end
 
     # Check whether inputs are correct
     if length(fm) != N
@@ -40,7 +44,7 @@ function SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elas
     end
     V = check_vc_increasing(fm)
 
-    outfile = string("outputs/simulations_outcome_LM_asymmetric_", join(fm[1],'_'))
+    outfile = string(outdir, "/simulations_outcome_LM_asymmetric_", join(fm[1],'_'))
     if expostir
         outfile = string(outfile, "_expostir")
     end
@@ -80,7 +84,7 @@ function SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elas
 end
 
 # N suppliers
-function SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=false, expostir=false, N=2)
+function SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=false, expostir=false, N=2, outdir="outputs")
     ## OVERVIEW ##
     # This method simulates a N supplier general affine model for different combinations of
     # values of qualities and demand matrices. It considers symmetric settings, i.e.
@@ -95,6 +99,10 @@ function SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=
     # 5. gamma_ij = list of possible values in the off-diagonal of demand matrix
     # 6. elastic = boolean; true => elastic demand, false=> inelastic demand
     # 7. expostir = boolean; true => expostir constraints, false=> only interim constraints
+
+    if !isdir(outdir)
+        mkdir(outdir)
+    end
 
     # Check whether inputs are correct
     if length(fm) != N
@@ -114,7 +122,7 @@ function SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic=
 
 
     # start process
-    outfile = string("outputs/simulations_outcome_LM_symmetric_N=", N,"_", join(fm[1],'_'))
+    outfile = string(outdir,"/simulations_outcome_LM_symmetric_N=", N,"_", join(fm[1],'_'))
     if expostir
         outfile = string(outfile, "_expostir")
     end
@@ -169,7 +177,7 @@ a_j = [11]# linspace(25,100,4)
 # SETTING FOR SIMULATIONS
 elasticities = [false, true] #, false
 expostirs = [false, true]
-distributions = [[0.1, 0.9], [0.2, 0.8], [0.25, 0.75], [0.4, 0.6], [0.5, 0.5], [0.6,0.4], [0.75, 0.25], [0.8, 0.2], [0.9,0.1]]
+distributions = [[0.1, 0.9], [0.2, 0.8], [0.25, 0.75], [0.4, 0.6], [0.5, 0.5], [0.6,0.4], [0.75, 0.25], [0.8, 0.2], [0.9,0.1]] 
 
 for e=1:length(elasticities)
     elastic = elasticities[e]
@@ -178,7 +186,8 @@ for e=1:length(elasticities)
         fm = Dict(i=>distr for i=1:N) # two suppliers
         for ex=1:length(expostirs)
             expostir = expostirs[ex]
-            SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic, expostir, N)
+            #SimulateNSupplierSymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic, expostir, N, "outputs_v3")
+            SimulateTwoSuppliersAsymmetric(types, fm, a_j, gamma_ii, gamma_ij, elastic, expostir, "outputs_v4")
         end
     end
 end
