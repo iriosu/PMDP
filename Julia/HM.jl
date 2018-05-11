@@ -223,7 +223,7 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     @constraint(m, def_k[i=1:nsupp, j=1:sts],
                 -0.5*delta*((loc[i] - sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i-1)))^2
                             + (sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i))-loc[i])^2 ) - k[(j-1)*nsupp+i]>= 0)
-    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
+    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC interim
 
     # special constraints
     if expostir == true
@@ -252,7 +252,7 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
 
     @objective(m, Max, z)
 
-    # print(m)
+    print(m)
     # exit()
 
     status = solve(m)
@@ -269,131 +269,3 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     println("===============================")
     return obj, transfers, x_vals, t_vals
 end
-
-function SimulateOptimization(types, fm, loc, deltas, elastic=false, expostir=false)
-    println("Generating Inputs")
-    nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
-    outfile = string("outputs/simulations_outcome_HM_", join(fm[1],'_'))
-    if expostir
-        outfile = string(outfile, "_expostir")
-    end
-    if elastic
-        outfile = string(outfile, "_elastic.txt")
-    else
-        outfile = string(outfile, "_inelastic.txt")
-    end
-    println(outfile)
-    f = open(outfile, "w")
-    out = []
-    for i=1:length(deltas)
-        delta = deltas[i]
-        println("Solving the problem for ", delta)
-        obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", elastic, expostir)
-        obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "decentralized", elastic, expostir, x_cent, t_cent)
-        str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
-        str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
-        outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
-                               ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
-        write(f, "$outstr \n")
-        push!(out, "$outstr \n")
-    end
-    close(f)
-    for i=1:length(out)
-        println(out[i])
-    end
-end
-
-
-# IMPORTANT: types must be sorted in increasing order
-### INPUTS ###
-types = Dict(1=>10, 2=>12)
-fm = Dict(1=>[0.1,0.9],2=>[0.1,0.9])
-# types = Dict(1=>0.1, 2=>0.2)
-# fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
-# types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
-# fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
-V = check_vc_increasing(fm)
-
-# alphas
-loc = [0,1]
-delta = 5
-deltas = [i for i=0.5:0.5:6]
-
-version = "decentralized" # or decentralized
-elastic = false
-expostir = true
-
-elasticities = [false] #, false
-distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
-
-
-nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
-epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
-# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", elastic, expostir)
-# obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "decentralized", elastic, expostir, x_cent, t_cent)
-# str_x_cent, str_t_cent = join(x_cent,';'), join(t_cent,';')
-# str_x_dec, str_t_dec = join(x_dec,';'), join(t_dec,';')
-# outstr = string(delta, ";", obj_cent, ";", str_x_cent, ";", str_t_cent,
-#                        ";", obj_dec, ";", str_x_dec, ";", str_t_dec)
-# println(outstr)
-# exit()
-
-x0 = [0.500659693, 0.499340307, 0.999999979,  0, 0, 0.999999979, 0.501219235, 0.498780765]
-t0 = [104.0285416, 103.9714553, 0, 53.86832286, 54.13167772, 0, 0, 0]
-t1 = [8.490962389, 7.668715902, 10.61189003, 0, 0, 10.70370043, 6.000249467, 5.999750571]
-IR = epG_x*x0 + epG_t*t1
-
-println(IR)
-println(eph)
-println(IR .>= eph)
-expt0 = 0
-expt1 = 0
-for s=1:length(Theta)
-    println(s, " ", fth[Theta[s]], " ", expt0, " ", expt1)
-    expt0 = expt0 + fth[Theta[s]]*(t0[nsupp*(s-1)+1]+t0[nsupp*(s-1)+2])
-    expt1 = expt1 + fth[Theta[s]]*(t1[nsupp*(s-1)+1]+t1[nsupp*(s-1)+2])
-end
-println("expected transfer t0 = ", expt0)
-println("expected transfer t1 = ", expt1)
-exit()
-
-for e=1:length(elasticities)
-    elastic = elasticities[e]
-    for d=1:length(distributions)
-        distr = distributions[d]
-        fm = Dict(1=>distr,2=>distr)
-        SimulateOptimization(types, fm, loc, deltas, elastic, expostir)
-    end
-end
-
-
-exit()
-
-
-
-
-
-
-
-# nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "centralized")
-
-
-
-
-# Objective value: -12.125009520159871
-# Allocations: [0.499992, 0.500008, 0.999999, 7.4766e-7, 5.79408e-7, 0.999999, 0.500003, 0.499997]
-# Transfers: [15.9999, 16.0001, 0.0, 5.99998, 6.00004, 0.0, 0.0, 0.0]
-
-
-# for i=1:length(u0)
-#     println(p0[i] - u0[i] + v0[i] + delta*x_cent[i] )
-# end
-
-# obj_cent, tra_cent, x_dec, t_dec = CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", x_cent, t_cent)
-
-# obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, "decentralized", x_cent, t_cent)
-
-# Objective value: -12.458331756709534
-# Allocations: [0.833335, 0.166665, 0.833335, 0.166665, 0.0, 1.0, 0.0, 1.0]
-# Transfers: [8.33334, 1.99998, 8.33335, 1.99998, 0.0, 12.0, 0.0, 12.0]

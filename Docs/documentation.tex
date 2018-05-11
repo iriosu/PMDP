@@ -10,14 +10,35 @@
 
 \bibliographystyle{plainnat}
 
-
-
-\title{Documentation}
+\title{Documentation Code}
+\author{Ignacio Rios \\ Stanford GSB}
 
 \date{\today}
 
 % Document starts here!
 \begin{document}
+\maketitle
+\section{Introduction}
+This repository contains files to simulate results for the paper \emph{Procurement
+Mechanisms for Differentiated Products}, by Daniela Saban and Gabriel Weintraub.
+
+I implemented it in the programming language Julia, because of its capabilities to
+formulate and solve optimization problems. In particular, I use the library JuMP,
+which makes the formulation of problems much easier. In addition, to have Julia and
+JuMP, the other requirements are installing the solvers Gurobi and Knitro:
+\begin{itemize}
+    \item Gurobi: general solver for linear and mixed integer problems. I use it to solve the centralized
+    problem. It can be easily installed from the Gurobi website, and they have academic
+    licenses for free. Once you install it, you have to also install a Julia package to
+    use it.
+    \item Knitro: general solver for non-linear problems. I use it to solve the decentralized
+    problem. This solver can also be installed and there is a trial license for free (which lasts
+    around 6 months). An important feature of this solver is the number of starting points
+    used during the optimization, since this helps to avoid local optimal solutions.
+    So far I implemented it with 500 starting points and it is working well with that;
+    however, it takes some time to solve. You may want to decrease that to speed up,
+    but you may get worst results.
+\end{itemize}
 
 \section{Repository}
 
@@ -25,7 +46,10 @@ The repository Julia contains four main files:
 \begin{itemize}
     \item HM.jl: implementation of the Hotelling model.
     \item LDM.jl: implementation of the general affine demand model.
+    \item SimulationsHM.jl: implementation to simulate different instances of the Hotelling model.
+    \item SimulationsLM.jl: implementation to simulate different instances of the general affine demand model.
     \item utilities.jl: contains a series of methods to compute demands, virtual costs, and check assumptions.
+    \item procesingresults.jl: contains a series of methods to process the results of the simulations.
     \item exmaples.jl: tests solutions with close forms to contrast with the results from optimization.
 \end{itemize}
 
@@ -95,11 +119,14 @@ This file has the following methods:
         \item bA: matrix multiplying \(x\) in the feasibility constraints
         \item bb: right-hand side of feasibility constraints (equal to a vector of ones)
         \item wqt: vector with the probabilities of each scenario in \(\Theta\) to compute the expected value for objective function
+        \item f: joint distribution of types
+        \item Theta: equivalent to \(\Theta\), i.e. the set of all types.
     \end{itemize}
+    \item GenerateExPostInputs: receives as input the list of types, the set of type combinations, the number of suppliers and the number of variables. Generates as output the matrices and vectors required
+    to write ex-post IR constraints.
     \item CheckFeasibility: receives the inputs of the problem and solutions
     \(x_0, t_0\) and checks whether this solution is feasible for the decentralized problem. To accomplish this, I fix \(x=x_0, t=t_0\) and solve the decentralized problem with objective value equal to 1.
     \item SolveOptimization: formulates and solves the optimization problem using as inputs the parameters of the problem and version, which is equal to centralized or decentralized.
-    \item SimulateOptimization: solve recursively the optimization problem for different \(\delta\).
 \end{itemize}
 
 
@@ -116,7 +143,107 @@ by adding the following KKT conditions as constraints (in matrix form):
 \end{split}
 \]
 The methods in this file are the same as in the previous case adapted to the general affine demand model.
+In particular, these methods are:
+\begin{itemize}
+  \item GenerateInputs: same as before. Actually, these methods are exactly equivalent to that in the Hotelling case.
+  \item GenerateExPostInputs: same as before. Actually, these methods are exactly equivalent to that in the Hotelling case.
+  \item InputsObjectiveLM: these method generates special inputs for the general affine demand model. In particular, it computes
+  \[
+  D = \Gamma^{-1}, \quad c = D \alpha
+  \]
+  and also generates the inputs for the objective function of the affine model.
+  \item CheckFeasibility: given a solution to the affine model, it checks whether the solution is feasible.
+  \item SolveOptimization: formulates and solves the optimization problem using as inputs the parameters of the problem and version, which is equal to centralized or decentralized.
+  In addition, it receives the following additional inputs:
+  \begin{itemize}
+    \item elastic: boolean variable that is true if we want to solve elastic model, and false if we want to solve inelastic model.
+    \item expostir: boolean variable that is true if we want to incorporate ex-post IR constraints, and false if we want to consider only interim constraints.
+    \item x0: vector with initial solution - allocation
+    \item t0: vector with initial solution - transfers
+  \end{itemize}
+  Note: the solvers considered are two:
+  \begin{itemize}
+    \item Gurobi: used to solve the centralized problem.
+    \item Knitro: used to solve the decentralized problem. This solver is needed because the decentralized problem
+    is not linear, so Gurobi cannot handle it. When setting the solver, one parameter that is relevant is
+    \textbf{msmaxsolves}, which is the number of multi-start points considered.
+    Considering several starting points is important to avoid local optima solutions
+    that are not globally optimal.
+  \end{itemize}
+  \item FormulateAndSolve: considers the inputs of the problem to solve both the centralized and
+  the decentralized models, and returns:
+  \begin{itemize}
+    \item objective function of the centralized model
+    \item expected transfer of the centralized model
+    \item vector of allocation of the centralized model, i.e. \(x(\theta), \; \theta \in \Theta\)
+    \item vector of transfers of the centralized model, i.e. \(t(\theta), \; \theta \in \Theta\)
+    \item objective function of the decentralized model
+    \item expected transfer of the decentralized model
+    \item vector of allocation of the decentralized model
+    \item vector of transfers of the decentralized model
+  \end{itemize}
+\end{itemize}
 
+\section{SimulationsHM.jl}
+The implementation of the Hotelling model considers only two suppliers and any potential
+number of types. Implementing more suppliers is tricky because the the KKT
+conditions are messy.
+
+The methods considered in this file are:
+\begin{itemize}
+  \item SimulateTwoSuppliers: this method solves the Hotelling model for a list of different \(\delta\).
+  The inputs are:
+  \begin{itemize}
+    \item Types: list of types \(\Theta_i\)
+    \item Dictionary of marginal distributions
+    \item Vector of locations for Hotelling model
+    \item Vector of \(\delta\)s to perform simulation.
+    \item elastic: boolean that is true for elastic demand, false for inelastic.
+    \item expostir: boolean that is true for expost IR constraints, false for including only interim IR constraints.
+  \end{itemize}
+
+  The output generated by this method is a file that contains, for each \(\delta\),
+  \begin{itemize}
+    \item value of \(\delta\) considered
+    \item objective function of the centralized model
+    \item expected transfer of the centralized model
+    \item vector of allocation of the centralized model, i.e. \(x(\theta), \; \theta \in \Theta\)
+    \item vector of transfers of the centralized model, i.e. \(t(\theta), \; \theta \in \Theta\)
+    \item objective function of the decentralized model
+    \item expected transfer of the decentralized model
+    \item vector of allocation of the decentralized model
+    \item vector of transfers of the decentralized model
+  \end{itemize}
+\end{itemize}
+
+The execution starts in line 44. There you can write the parameters related to the
+types of suppliers, the distribution of types, the parameters for transportation
+cost and location of suppliers, as well as what we want to vary during simulation.
+
+\section{SimulationsLM.jl}
+For the general affine demand case, we can solve the problem for different number of
+supplier and for several number of types. The methods included in this file are:
+\begin{itemize}
+    \item SimulateTwoSuppliersAsymmetric: this method solves the problem for both
+    the centralized and decentralized cases considering two suppliers, for different parameters of quality and
+    demand functions. This method considers all possible combinations of parameters provided as inputs. The inputs
+    are:
+    \begin{itemize}
+        \item types: vector of types for each supplier \(\Theta_i\)
+        \item fm: marginal distributions of types
+        \item aj: list of potential values for the quality of suppliers
+        \item gammaii: list of potential values for the elements on the diagonal of the matrix \(\Gamma\)
+        \item gammaij: list of potential values for the elements off the diagonal of the matrix \(\Gamma\)
+        \item elastic: boolean that is true for elastic demand, false for inelastic
+        \item expostir: boolean that is true for expost IR constraints, false for including only interim IR constraints
+    \end{itemize}
+
+    \item SimulateNSupplierSymmetric: this method solves the symmetric problem for any number of
+    suppliers and types, i.e. it assumes that all suppliers provide the same quality and that the
+    demand matrix is symmetric and all elements in its diagonal are the same. The inputs for this
+    function are the same as before, with an additional one, \(N\), which is the desired number of
+    suppliers.
+\end{itemize}
 
 \section{utilities.jl}
 This file contains a series of methods that are used in the previous files.
@@ -160,6 +287,9 @@ These methods are:
 
 \end{itemize}
 
+\section{processingresults.jl}
+This file contains function that allow to read the outputs generated during simulation,
+and analyze different statistics or results.
 
 \section{examples.jl}
 This file tests the methods described previously.

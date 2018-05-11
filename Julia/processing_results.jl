@@ -1,7 +1,7 @@
 using PyPlot
 
 include("utilities.jl")
-function ReadOutputHM(infile)
+function ReadOutputHM(infile,nsupp=2,ncomb=4)
     f = open(infile)
     lines = readlines(f)
     out = Dict()
@@ -10,12 +10,12 @@ function ReadOutputHM(infile)
         delta = parse(Float64, pieces[1])
         out[delta] = Dict()
         out[delta]["obj_cent"] = round(parse(Float64, pieces[2]),4)
-        out[delta]["x_cent"] = [round(parse(Float64, pieces[i]),4) for i=3:10]
-        out[delta]["t_cent"] = [round(parse(Float64, pieces[i]),4) for i=11:18]
+        out[delta]["x_cent"] = [round(parse(Float64, pieces[i]),4) for i=3:(3+nsupp*ncomb-1)]
+        out[delta]["t_cent"] = [round(parse(Float64, pieces[i]),4) for i=(3+nsupp*ncomb):(3+2*nsupp*ncomb-1)]
 
-        out[delta]["obj_dec"] = round(parse(Float64, pieces[19]),4)
-        out[delta]["x_dec"] = [round(parse(Float64, pieces[i]),4) for i=20:27]
-        out[delta]["t_dec"] = [round(parse(Float64, pieces[i]),4) for i=28:35]
+        out[delta]["obj_dec"] = round(parse(Float64, pieces[3+2*nsupp*ncomb]),4)
+        out[delta]["x_dec"] = [round(parse(Float64, pieces[i]),4) for i=(3+2*nsupp*ncomb+1):(3+3*nsupp*ncomb)]
+        out[delta]["t_dec"] = [round(parse(Float64, pieces[i]),4) for i=(3+3*nsupp*ncomb+1):(3+4*nsupp*ncomb)]
     end
     return out
 end
@@ -210,6 +210,132 @@ function PlotObjectives(distr, elastic, version, expostir=false)
     show()
 end
 
+function CompareObjectives(distr, elastic, version, expostir=false)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    diff_obj = Dict()
+    diff_obj_ex = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        infile_ex = string("outputs2/simulations_outcome_HM_", join(dst,'_'), "_expostir")
+        infile = string("outputs2/simulations_outcome_HM_", join(dst,'_'))
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+            infile_ex = string(infile_ex, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+            infile_ex = string(infile_ex, "_inelastic.txt")
+        end
+        inls = ReadOutputHM(infile, 2, length(dst)^2)
+        inls_ex = ReadOutputHM(infile_ex, 2, length(dst)^2)
+
+        for l in keys(inls)
+            diff_obj[l] = inls[l]["obj_cent"]-inls[l]["obj_dec"]
+            diff_obj_ex[l] = inls_ex[l]["obj_cent"]-inls_ex[l]["obj_dec"]
+        end
+
+
+        ds = sort([i for i in keys(diff_obj)])
+
+        if expostir == false
+            plot(ds, [diff_obj[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        else
+            plot(ds, [diff_obj_ex[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if expostir == true
+        outstr = "plots/comp_obj_expostir_"
+    else
+        outstr = "plots/comp_obj_"
+    end
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\delta$")
+    ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function CostExPostIR(distr, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    diff_obj_cent = Dict()
+    diff_obj_dec = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        infile_ex = string("outputs2/simulations_outcome_HM_", join(dst,'_'), "_expostir")
+        infile = string("outputs2/simulations_outcome_HM_", join(dst,'_'))
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+            infile_ex = string(infile_ex, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+            infile_ex = string(infile_ex, "_inelastic.txt")
+        end
+        inls = ReadOutputHM(infile, 2, length(dst)^2)
+        inls_ex = ReadOutputHM(infile_ex, 2, length(dst)^2)
+
+        for l in keys(inls)
+            diff_obj_cent[l] = inls[l]["obj_cent"]-inls_ex[l]["obj_cent"]
+            diff_obj_dec[l] = inls[l]["obj_dec"]-inls_ex[l]["obj_dec"]
+        end
+
+
+        ds = sort([i for i in keys(diff_obj_cent)])
+
+        if version == "centralized"
+            # if dst[1] > 0.1
+            #     plot(ds, [diff_obj_cent[s] for s in ds], linestyle="--",marker="o", label=strdist)
+            # end
+            plot(ds, [diff_obj_cent[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        else
+            # if dst[1] > 0.1
+            #     plot(ds, [diff_obj_dec[s] for s in ds], linestyle="--",marker="o", label=strdist)
+            # end
+            plot(ds, [diff_obj_dec[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if version == "centralized"
+        outstr = "plots/cost_expostir_cent_"
+    else
+        outstr = "plots/cost_expostir_dec_"
+    end
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\delta$")
+    ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
 function PlotAvgDemand(distr, types, elastic, version)
     els = nothing
     if elastic
@@ -259,7 +385,7 @@ function PlotAvgDemand(distr, types, elastic, version)
     show()
 end
 
-function PlotVarTransfers(distr, types, elastic, version, expostir)
+function PlotVarTransfers(distr, types, elastic, version, expostir=false)
     els = nothing
     if elastic
         els = "elastic"
@@ -290,8 +416,8 @@ function PlotVarTransfers(distr, types, elastic, version, expostir)
         nsupp, ntypes, nvars, sts, G_x, G_t, h, A, b, q_t, f, Theta = InputsConstraintsCentralized(types, fm)
 
         skeys =  sort([i for i in keys(sol)])
-        avgT_cent = Dict(r=>mean([sol[skeys[r]]["t_cent"][nsupp*(s-1)+1] for s=1:sts ]) for r=1:length(skeys) )
-        avgT_dec = Dict(r=>mean([sol[skeys[r]]["t_dec"][nsupp*(s-1)+1] for s=1:sts ]) for r=1:length(skeys) )
+        avgT_cent = Dict(r=>sum([sol[skeys[r]]["t_cent"][nsupp*(s-1)+1]*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) )
+        avgT_dec = Dict(r=>sum([sol[skeys[r]]["t_dec"][nsupp*(s-1)+1]*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) )
         d1_cent = [sum([(sol[skeys[r]]["t_cent"][nsupp*(s-1)+1]-avgT_cent[r]  )^2*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
         d1_dec = [sum([(sol[skeys[r]]["t_dec"][nsupp*(s-1)+1]-avgT_dec[r]  )^2*f[Theta[s]] for s=1:sts ]) for r=1:length(skeys) ]
         if version == "centralized"
@@ -413,58 +539,322 @@ function PlotOwnElasticities(distr, types, elastic, version)
     show()
 end
 
+
+# ========================================
+# METHODS FOR LINEAR DEMAND MODEL
+# ========================================
+function ReadOutputLM(infile,nsupp=2,ncomb=4)
+    f = open(infile)
+    lines = readlines(f)
+    out = Dict()
+    for l in lines
+        pieces = split(l, ";")
+        a_1 = parse(Float64, pieces[1])
+        a_2 = parse(Float64, pieces[2])
+        gamma_11 = parse(Float64, pieces[3])
+        gamma_22 = parse(Float64, pieces[4])
+        gamma_12 = parse(Float64, pieces[5])
+        key = (a_1,a_2,gamma_11,gamma_22,gamma_12)
+        out[key] = Dict()
+        out[key]["obj_cent"] = round(parse(Float64, pieces[6]),4)
+        out[key]["x_cent"] = [round(parse(Float64, pieces[i]),4) for i=7:(7+nsupp*ncomb-1)]
+        out[key]["t_cent"] = [round(parse(Float64, pieces[i]),4) for i=(7+nsupp*ncomb):(7+2*nsupp*ncomb-1)]
+
+        out[key]["obj_dec"] = round(parse(Float64, pieces[7+2*nsupp*ncomb]),4)
+        out[key]["x_dec"] = [round(parse(Float64, pieces[i]),4) for i=(7+2*nsupp*ncomb+1):(7+3*nsupp*ncomb)]
+        out[key]["t_dec"] = [round(parse(Float64, pieces[i]),4) for i=(7+3*nsupp*ncomb+1):(7+4*nsupp*ncomb)]
+    end
+    return out
+end
+
+function PlotObjectivesLM(distr, elastic, version, expostir=false)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    obj = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        if expostir
+            infile = string("outputs/simulations_outcome_LM_", join(dst,'_'), "_expostir")
+        else
+            infile = string("outputs/simulations_outcome_LM_", join(dst,'_'))
+        end
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+        end
+        inls = ReadOutputLM(infile, 2, length(dst)^2)
+
+        for key in keys(inls)
+            l = key[end]
+            if version == "centralized"
+                obj[l] = inls[key]["obj_cent"]
+            else
+                obj[l] = inls[key]["obj_dec"]
+            end
+        end
+        ds = sort([i for i in keys(obj)])
+        plot(ds, [obj[s] for s in ds], linestyle="--",marker="o", label=strdist)
+    end
+    legend()
+    if version == "centralized"
+        outstr = "plots/LM_cent_obj_"
+    else
+        outstr = "plots/LM_dec_obj_"
+    end
+
+    if expostir == true
+        outstr = string(outstr, "expostir_")
+    end
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\gamma$")
+    # ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function CompareObjectivesLM(distr, elastic, version, expostir=false)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    diff_obj = Dict()
+    diff_obj_ex = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        infile_ex = string("outputs/simulations_outcome_LM_", join(dst,'_'), "_expostir")
+        infile = string("outputs/simulations_outcome_LM_", join(dst,'_'))
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+            infile_ex = string(infile_ex, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+            infile_ex = string(infile_ex, "_inelastic.txt")
+        end
+        inls = ReadOutputLM(infile, 2, length(dst)^2)
+        inls_ex = ReadOutputLM(infile_ex, 2, length(dst)^2)
+
+        for key in keys(inls)
+            l = key[end]
+            diff_obj[l] = inls[key]["obj_cent"]-inls[key]["obj_dec"]
+            diff_obj_ex[l] = inls_ex[key]["obj_cent"]-inls_ex[key]["obj_dec"]
+        end
+
+
+        ds = sort([i for i in keys(diff_obj)])
+
+        if expostir == false
+            plot(ds, [diff_obj[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        else
+            plot(ds, [diff_obj_ex[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        end
+
+    end
+    legend()
+    if expostir == true
+        outstr = "plots/LM_comp_obj_expostir_"
+    else
+        outstr = "plots/LM_comp_obj_"
+    end
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\gamma$")
+    # ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function CostExPostIR(distr, elastic, version)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    diff_obj_cent = Dict()
+    diff_obj_dec = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        infile_ex = string("outputs/simulations_outcome_LM_", join(dst,'_'), "_expostir")
+        infile = string("outputs/simulations_outcome_LM_", join(dst,'_'))
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+            infile_ex = string(infile_ex, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+            infile_ex = string(infile_ex, "_inelastic.txt")
+        end
+        inls = ReadOutputLM(infile, 2, length(dst)^2)
+        inls_ex = ReadOutputLM(infile_ex, 2, length(dst)^2)
+
+        for key in keys(inls)
+            l = key[end]
+            diff_obj_cent[l] = inls[key]["obj_cent"]-inls_ex[key]["obj_cent"]
+            diff_obj_dec[l] = inls[key]["obj_dec"]-inls_ex[key]["obj_dec"]
+        end
+
+        ds = sort([i for i in keys(diff_obj_cent)])
+        if version == "centralized"
+            plot(ds, [diff_obj_cent[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        else
+            plot(ds, [diff_obj_dec[s] for s in ds], linestyle="--",marker="o", label=strdist)
+        end
+    end
+    legend()
+    if version == "centralized"
+        outstr = "plots/LM_cost_expostir_cent_"
+    else
+        outstr = "plots/LM_cost_expostir_dec_"
+    end
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\gamma$")
+    # ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
+function CompareAllocationLM_HL_centin_vs_decex(distr, elastic)
+    els = nothing
+    if elastic
+        els = "elastic"
+    else
+        els = "inelastic"
+    end
+    diff_x = Dict()
+    for k=1:length(distr)
+        dst = distr[k]
+        println("========================")
+        println("Distribution: ", dst)
+        println("========================")
+        strdist = join([round(dst[i],2) for i=1:length(dst)],'_')
+
+        infile_ex = string("outputs/simulations_outcome_LM_", join(dst,'_'), "_expostir")
+        infile = string("outputs/simulations_outcome_LM_", join(dst,'_'))
+
+        if elastic
+            els = "elastic"
+            infile = string(infile, "_elastic.txt")
+            infile_ex = string(infile_ex, "_elastic.txt")
+        else
+            els = "inelastic"
+            infile = string(infile, "_inelastic.txt")
+            infile_ex = string(infile_ex, "_inelastic.txt")
+        end
+        inls = ReadOutputLM(infile, 2, length(dst)^2)
+        inls_ex = ReadOutputLM(infile_ex, 2, length(dst)^2)
+
+        for key in keys(inls)
+            l = key[end]
+            diff_x[l] = inls[key]["x_cent"][4]-inls_ex[key]["x_dec"][4]
+        end
+        ds = sort([i for i in keys(diff_x)])
+        plot(ds, [diff_x[s] for s in ds], linestyle="--",marker="o", label=strdist)
+    end
+    legend()
+    outstr = "plots/LM_comp_x_"
+    outstr = string(outstr, els, ".pdf")
+    xlabel(L"$\gamma$")
+    # ylim([-0.1, 0.01])
+    ylabel("Objective")
+    savefig(outstr)
+    show()
+end
+
 #### MAIN ####
-types = Dict(1=>10, 2=>12)
-distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
+# types = Dict(1=>10, 2=>12)
+types = Dict(1=>10, 2=>10.5)
+# types = Dict(1=>8, 2=>10, 3=>12)
+# distributions = [[0.1, 0.9], [0.25, 0.75], [0.4, 0.6], [0.5,0.5], [0.6,0.4], [0.75, 0.25], [0.9, 0.1]]
+# distributions = [[(1/3), (1/3), (1/3)],
+#                  [0.25,0.25, 0.5], [0.25, 0.5, 0.25], [0.5, 0.25, 0.25],
+#                  [0.2, 0.2, 0.6], [0.2, 0.6, 0.2], [0.6, 0.2, 0.2],
+#                  [0.1, 0.1, 0.8], [0.1, 0.8, 0.1], [0.8, 0.1, 0.1]]
 elastic = false
-version = "decentralized"
-expostir = true
+version = "centralized"
+expostir = false
+
+distributions = [[0.1, 0.9], [0.2, 0.8], [0.25, 0.75], [0.4, 0.6], [0.5, 0.5], [0.6,0.4], [0.75, 0.25], [0.8, 0.2], [0.9,0.1]]
+
 
 # sol = ReadOutputHM("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt")
-# ut, outval, outprob = CheckExPostIR("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt", types)
+
 #
-# for k in keys(ut)
-#     println("================")
-#     println("Delta = ", k)
-#     println("================")
-#     println([ut[k][s][1]["cent"] for s=1:4])
-#     println([sol[k]["t_cent"][2*(s-1)+1] for s=1:4])
-#     println([sol[k]["x_cent"][2*(s-1)+1] for s=1:4])
+# out = ReadOutputLM("outputs/simulations_outcome_LM_0.1_0.9_inelastic.txt",2,4)
+#
+# for k in keys(out)
+#     if prod(out[k]["x_cent"][i]>=0 for i=1:length(out[k]["x_cent"]))
+#         println(k, " ", out[k]["obj_cent"], " ", out[k]["obj_dec"])
+#     end
 # end
 
-PlotObjectives(distributions, elastic, version, expostir)
+# PlotObjectivesLM(distributions, false, "centralized", false)
+# PlotObjectivesLM(distributions, false, "decentralized", false)
+# PlotObjectivesLM(distributions, false, "centralized", true)
+# PlotObjectivesLM(distributions, false, "decentralized", true)
+#
+# PlotObjectivesLM(distributions, true, "centralized", false)
+# PlotObjectivesLM(distributions, true, "decentralized", false)
+# PlotObjectivesLM(distributions, true, "centralized", true)
+# PlotObjectivesLM(distributions, true, "decentralized", true)
+#
+#
+# CompareObjectivesLM(distributions, false, version, false) # difference between centralized and decentralized without expostir constraint
+# CompareObjectivesLM(distributions, false, version, true) # same with expost ir constraints
+# CompareObjectivesLM(distributions, true, version, false) # difference between centralized and decentralized without expostir constraint
+# CompareObjectivesLM(distributions, true, version, true) # same with expost ir constraints
+
+# CostExPostIR(distributions, false, "centralized")
+# CostExPostIR(distributions, false, "decentralized")
+# CostExPostIR(distributions, true, "centralized")
+# CostExPostIR(distributions, true, "decentralized")
+
+CompareAllocationLM_HL_centin_vs_decex(distributions, false)
+CompareAllocationLM_HL_centin_vs_decex(distributions, true)
+
+
+exit()
+
+CompareObjectives(distributions, elastic, version, false) # difference between centralized and decentralized without expostir constraint
+CompareObjectives(distributions, elastic, version, true) # same with expost ir constraints
+
+CostExPostIR(distributions, elastic, "centralized") # differences between centralized problem with interim and expost IR
+CostExPostIR(distributions, elastic, "decentralized") # same but comparing decentralized solutions
+
+# PlotObjectives(distributions, elastic, version, expostir)
+# PlotVarTransfers(distributions, types, elastic, version, expostir)
 # PlotOwnElasticities(distributions, types, elastic, version)
 # PlotAvgDemand(distributions, types, elastic, version)
 # PlotNumberActiveSuppliers(distributions, types, elastic, version)
 # own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt", types)
-#
-# sol = ReadOutputHM("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt")
-# for k in keys(sol)
-#     println("============================")
-#     println("delta = ", k)
-#     println("============================")
-#     println(k, " ", sol[k]["x_cent"])
-#     println(k, " ", sol[k]["x_dec"])
-# end
-
-
-
-# out = ReadOutputHM("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt")
-# CheckBindingIC("outputs/simulations_outcome_HM_0.1_0.9_inelastic.txt", types)
-# outprob = CheckExPostIR("outputs/simulations_outcome_HM_0.4_0.6_inelastic.txt", types)
-# for k in keys(outprob)
-#     println("Printing for delta = ", k)
-#     for i in keys(outprob[k])
-#         println("    Supplier ", i)
-#         println("        Cent: ", outprob[k][i]["cent"], " Dec: ", outprob[k][i]["dec"])
-#     end
-# end
-
-# own_e, cross_e, own_p, cross_p = Elasticities("outputs/simulations_outcome_HM_0.9_0.1_inelastic.txt", types)
-# println(own_e)
-# println(own_p)
-# for k in keys(own_e)
-#     for i in keys(own_e[k])
-#         println(k, " ", i, " ", "cent", " ", own_e[k][i]["cent"])
-#     end
-# end

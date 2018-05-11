@@ -47,6 +47,34 @@ function virtual_cost(theta, fm, Fm, idx_s, idx_t)
     return theta_i + (F_i[rho_i]/f_i[idx_t])*(theta_i - theta[rho_i])
 end
 
+function interim_allocation_and_transfer(fm, Theta, nsupp, ntypes, x, t)
+    # receives vector of transfers and allocations and computes the interim counterpart
+    # this dict tell us the probability of all other subjects being of their type $f_{-i}(\theta_{-i})$
+    f_woi = Dict(i=>Dict(j=>0.0 for j in Theta) for i in 1:nsupp)
+
+    for i in keys(f_woi)
+        supp_woi = [j for j in 1:nsupp if j!=i]
+        for perm in Theta
+            f_woi[i][perm] = prod([fm[j][perm[j]] for j in supp_woi])
+        end
+    end
+    Xout = Dict(i=>Dict(j=>0.0 for j=1:ntypes) for i in 1:nsupp)
+    Tout = Dict(i=>Dict(j=>0.0 for j=1:ntypes) for i in 1:nsupp)
+    # individual rationality constraints
+    for i in 1:nsupp
+        for j in 1:ntypes
+            # we assume that the type of employee i is j
+            # now we find all scenarios where employee i is of type j
+            idxs = [k for k in 1:length(Theta) if Theta[k][i] == j]
+            for k in idxs
+                Xout[i][j] = Xout[i][j] + x[nsupp*(k-1)+i]*f_woi[i][Theta[k]]
+                Tout[i][j] = Tout[i][j] + t[nsupp*(k-1)+i]*f_woi[i][Theta[k]]
+            end
+        end
+    end
+    return Xout, Tout
+end
+
 # ----------------------------------
 # Methods to compute analytical demands
 # ----------------------------------

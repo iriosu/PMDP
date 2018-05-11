@@ -1,0 +1,11 @@
+{
+  "projectPath": "/Users/iriosu/Dropbox/PhD/RA/PMDP/Docs",
+  "title": "LaTeX-Plus Project",
+  "root": "documentation.tex",
+  "program": "pdflatex",
+  "latexmkOptions": "-bibtex -pdf -shell-escape",
+  "output": "build",
+  "openOutput": "false",
+  "postAction": "",
+  "postPath": ""
+}

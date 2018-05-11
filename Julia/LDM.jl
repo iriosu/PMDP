@@ -1,6 +1,3 @@
-# ==============================
-# Formulates the problem and solves it
-# ==============================
 using JuMP
 using PyPlot
 using Gurobi, KNITRO
@@ -99,6 +96,31 @@ function GenerateInputs(types, fm)
     return nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, f, Theta
 end
 
+function GenerateExPostInputs(types, Theta, nsupp, nvars)
+    ntypes = length(types)
+    # individual rationality constraints
+    sts = length(Theta)
+    bIR_x = zeros((sts*nsupp, nvars))
+    bIR_t = zeros((sts*nsupp, nvars))
+    row = 1
+
+    for i in 1:nsupp
+        for j in 1:ntypes
+            # we assume that the type of employee i is j
+            # now we find all scenarios where employee i is of type j
+            idxs = [k for k in 1:length(Theta) if Theta[k][i] == j]
+            for k in idxs
+                bIR_x[row, nsupp*(k-1)+i] = -types[j]
+                bIR_t[row, nsupp*(k-1)+i] = 1
+                row=row+1
+            end
+        end
+    end
+    bh = zeros(size(bIR_x)[1])
+
+    return bIR_x, bIR_t, bh
+end
+
 function InputsObjectiveLM(nalpha, nGamma, f, Theta, nsupp, ntypes, nvars, sts)
     nD = inv(nGamma)
     nc = nD*nalpha
@@ -108,16 +130,17 @@ function InputsObjectiveLM(nalpha, nGamma, f, Theta, nsupp, ntypes, nvars, sts)
     wq_x = zeros(nvars)
     q_x = zeros(nvars)
     for i in 1:sts
+        # unweighted parameters for objective function
         D[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = nD
+        q_x[nsupp*(i-1)+1:nsupp*i] = nc
+        # weighted by probabilities of each scenario
         wD[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nD
         wq_x[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nc
-        q_x[nsupp*(i-1)+1:nsupp*i] = nc
     end
     return D, wD, q_x, wq_x
 end
 
-function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, nalpha, nGamma, distr, Theta, version, elastic=false, x0=nothing, t0=nothing)
-    D, wD, c_x, wc_x = InputsObjectiveLM(nalpha, nGamma, distr, Theta, nsupp, ntypes, nvars, sts)
+function CheckFeasibility(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
 
     if version == "centralized"
         m = Model(solver=GurobiSolver(Presolve=0, MIPGap = 1e-12))
@@ -175,14 +198,13 @@ function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, nalpha, nGamma, distr, Theta, version, elastic=false, x0=nothing, t0=nothing)
-    D, wD, c_x, wc_x = InputsObjectiveLM(nalpha, nGamma, distr, Theta, nsupp, ntypes, nvars, sts)
+function SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
 
     if version == "centralized"
         m = Model(solver=GurobiSolver(Presolve=0, MIPGap = 1e-12))
     elseif version == "decentralized"
         m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 5000,
+                                      ms_enable = 1, ms_maxsolves = 500,
                                       algorithm = KTR_ALG_ACT_CG,
                                       outmode = KTR_OUTMODE_SCREEN,
                                       KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
@@ -210,25 +232,32 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     end
     @constraint(m, z <=  wc_x'*x - wq_t'*t - 0.5*x'*wD*x )
 
+    # special constraints
+    if expostir == true
+        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
+    end
+    if elastic == false
+        @constraint(m, bA*x .== bb) # feas
+    end
+
     if version == "decentralized"
-        # if x0 != nothing
-        #
-        # else
-        #     @variable(m, p[1:nvars]>=0)
-        # end
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
-        @variable(m, v[1:nvars])
-        @constraint(m, kkt_opt, p - c_x + D*x - u + v .== 0)
+        if elastic == false
+            @variable(m, v[1:nvars])
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+            @constraint(m, kkt_opt, p - c_x + D*x - u + v .== 0)
+        else
+            @constraint(m, kkt_opt, p - c_x + D*x - u .== 0)
+        end
         @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
         @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-        @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
     end
 
     @objective(m, Max, z)
     print(m)
     status = solve(m)
-    obj = -getobjectivevalue(m)
+    obj = getobjectivevalue(m)
     x_vals = getvalue(x)
     t_vals = getvalue(t)
     println(c_x)
@@ -241,128 +270,11 @@ function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq
     return obj, transfers, x_vals, t_vals
 end
 
-function SimulateOptimization(types, fm, a_j, gamma_ii, gamma_ij, elastic=false)
+function FormulateAndSolve(types, fm, nalpha, nGamma, elastic=false, expostir=false)
     nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, distr, Theta = GenerateInputs(types, fm)
-    if elastic
-        f = open("simulations_outcome_elastic.txt", "w")
-    else
-        f = open("simulations_outcome_inelastic.txt", "w")
-    end
-    for i1=1:length(a_j)
-        # to start assume that qualities are the same for both suppliers and same price sensitivities
-        for i2=i1:length(a_j)
-            alpha = [a_j[i1]; a_j[i2]]
-            for j1=1:length(gamma_ii)
-                for j2=j1:length(gamma_ii)
-                    for k=1:length(gamma_ij)
-                        Gamma = [gamma_ii[j1] -gamma_ij[k]; -gamma_ij[k] gamma_ii[j2]]
-                        if prod([check_diagonal_dominant(Gamma), check_consistency_demand_matrix(Gamma), isposdef(Gamma)]) == false
-                            println("***WARNING: the matrix does not satisfy the assumptions")
-                            continue
-                        end
-                        obj_cent, transfers_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, alpha, Gamma, distr, Theta, "centralized", elastic)
-                        obj_dec, transfers_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, alpha, Gamma, distr, Theta, "decentralized", elastic, x_cent, t_cent)
-                        # check if set of active suppliers is the same
-                        boo = true
-                        for l=1:length(x_cent)
-                            if x_cent[l] > 1e-5 && x_dec[l] < 1e-5
-                                boo = false
-                                break
-                            elseif x_cent[l] < 1e-5 && x_dec[l] > 1e-5
-                                boo = false
-                                break
-                            else
-                                continue
-                            end
-                        end
-
-                        outstr = string(a_j[i1], ";", a_j[i2], ";", gamma_ii[j1], ";", gamma_ii[j2], ";", gamma_ij[k], ";",
-                                        obj_cent, ";", obj_dec, ";", boo)
-                        write(f, "$outstr \n")
-                    end
-                end
-            end
-        end
-    end
-    close(f)
+    D, wD, c_x, wc_x = InputsObjectiveLM(nalpha, nGamma, distr, Theta, nsupp, ntypes, nvars, sts)
+    epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
+    obj_cent, transfers_cent, x_cent, t_cent = SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, "centralized", elastic, expostir)
+    obj_dec, transfers_dec, x_dec, t_dec = SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, "decentralized", elastic, expostir, x_cent, t_cent )
+    return obj_cent, transfers_cent, x_cent, t_cent, obj_dec, transfers_dec, x_dec, t_dec
 end
-
-function FormulateAndSolve(types, fm, nalpha, nGamma, version, elastic=false)
-    nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, distr, Theta = GenerateInputs(types, fm)
-    obj, transfers, x_vals, t_vals = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, nalpha, nGamma, distr, Theta, version, elastic)
-end
-
-
-
-# IMPORTANT: types must be sorted in increasing order
-### INPUTS ###
-types = Dict(1=>10, 2=>12)
-fm = Dict(1=>[0.6,0.4],2=>[0.5,0.5])
-# types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
-# fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
-V = check_vc_increasing(fm)
-
-gamma_ii = 1:5:10 #1:1:10
-gamma_ij = 0.05:0.45:0.95 #0.05:0.1:0.95
-a_j = linspace(12,300,2)
-
-println(gamma_ii)
-println(gamma_ij)
-println(a_j)
-
-elastic = false
-
-SimulateOptimization(types, fm, a_j, gamma_ii, gamma_ij, elastic)
-
-exit()
-
-
-
-
-
-
-
-# # alphas
-# a_1, a_2 = 0.25, 0.5
-# # matrix for demand
-# r_1, r_2 = 1,1.1
-# gamma = 0.5
-#
-# boos = check_conditions_LM(types, fm, [a_1,a_2], [r_1,r_2], gamma)
-#
-#
-# if r_1 + r_2 < 2*gamma
-#     println("***ERROR: does not satisfy consistency check")
-#     exit()
-# end
-#
-# # build input matrices
-# if length(fm) == 2
-#     nalpha = [a_1; a_2]
-#     nGamma = [r_1 -gamma;-gamma r_2]
-# end
-# if length(fm) == 1
-#     nalpha = [a_1]
-#     nGamma = [r_1]
-# end
-#
-#
-
-
-# version = "decentralized" # or decentralized
-# elastic = true
-#
-# nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t = GenerateInputs(types, fm)
-# D, wD, q_x, wq_x = InputsObjectiveLM(nalpha, nGamma, fm, nsupp, ntypes, nvars, sts)
-# obj, transfers, x_vals, t_vals = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, nalpha, nGamma, fm, version, elastic)
-#
-# # Barrier solved model in 15 iterations and 0.02 seconds
-# # Optimal objective 1.20162745e-01
-# #
-# # ===============================
-# # Objective value: 0.12016274467115176
-# # Allocations: [0.2, 0.44, 0.266667, 0.293333, 0.375, 0.0550002, 0.0500001, 0.515, 0.116667, 0.368333, 0.225, 0.13, 5.0723e-9, 0.54, 4.70934e-9, 0.426667, 0.0750012, 0.204999]
-# # Transfers: [0.0679167, 0.124222, 0.0226389, 0.105778, 0.0679167, 0.0433333, 0.0429167, 0.0621111, 0.0143056, 0.0528889, 0.0429167, 0.0216667, 0.0062501, 0.124222, 0.00208337, 0.105778, 0.0062501, 0.0433333]
-# # ===============================
-
-# exit()
