@@ -177,7 +177,7 @@ a_j = [11]# linspace(25,100,4)
 # SETTING FOR SIMULATIONS
 elasticities = [false, true] #, false
 expostirs = [false, true]
-distributions = [[0.1, 0.9], [0.2, 0.8], [0.25, 0.75], [0.4, 0.6], [0.5, 0.5], [0.6,0.4], [0.75, 0.25], [0.8, 0.2], [0.9,0.1]] 
+distributions = [[0.1, 0.9]] #, [0.2, 0.8], [0.25, 0.75], [0.4, 0.6], [0.5, 0.5], [0.6,0.4], [0.75, 0.25], [0.8, 0.2], [0.9,0.1] 
 
 for e=1:length(elasticities)
     elastic = elasticities[e]

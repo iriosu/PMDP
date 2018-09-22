@@ -50,8 +50,12 @@ end
 # =================
 # TO SET PARAMETERS FOR SIMULATION, CHANGE HERE!
 # SUPPLIERS AND TYPES
-types = Dict(1=>8, 2=>10, 3=>12)
-fm = Dict(1=>[0.25,0.5,0.25],2=>[0.25,0.5,0.25])
+# types = Dict(1=>8, 2=>10, 3=>12)
+# fm = Dict(1=>[0.25,0.5,0.25],2=>[0.25,0.5,0.25])
+
+types = Dict(1=>10, 2=>12)
+fm = Dict(1=>[0.25,0.75],2=>[0.25,0.75])
+
 # types = Dict(1=>0.1, 2=>0.2)
 # fm = Dict(1=>[0.6,0.4],2=>[0.75,0.25])
 # types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
@@ -60,8 +64,14 @@ V = check_vc_increasing(fm)
 
 # PARAMETERS OF THE PROBLEM: LOCATIONS AND TRANSPORTATION COST
 loc = [0,1]
-delta = 5
-deltas = [i for i=3:1:6]
+delta = 0.1
+
+nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
+obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", false, false)
+
+
+exit()
+
 
 elasticities = [false] #, false
 expostirs = [false, true]

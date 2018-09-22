@@ -1,6 +1,6 @@
 using JuMP
 using PyPlot
-using Gurobi, KNITRO
+using Gurobi, KNITRO, NLopt
 include("utilities.jl")
 
 # ==============================
@@ -189,19 +189,25 @@ function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
-    # GENERAL CASE FOR HOTELLING MODEL WITH  MORE THAN TWO SUPPLIERS, BUT HAS A BUg IN OBJECTIVE FUNCTION
+function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing, nlsolver="nlopt")
     if version == "centralized"
         m = Model(solver=GurobiSolver(MIPGap = 1e-12))
     elseif version == "decentralized"
-        m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 500,
-                                      algorithm = KTR_ALG_ACT_CG,
-                                      outmode = KTR_OUTMODE_SCREEN,
-                                      KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
-                                      KTR_PARAM_MIP_OUTINTERVAL = 1,
-                                      KTR_PARAM_MIP_MAXNODES = 10000,
-                                      KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
+        if nlsolver == "knitro"
+            m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
+                                          ms_enable = 1, ms_maxsolves = 500,
+                                          algorithm = KTR_ALG_ACT_CG,
+                                          outmode = KTR_OUTMODE_SCREEN,
+                                          KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
+                                          KTR_PARAM_MIP_OUTINTERVAL = 1,
+                                          KTR_PARAM_MIP_MAXNODES = 10000,
+                                          KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
+        elseif nlsolver == "nlopt"
+            m = Model(solver=NLoptSolver(algorithm=:LD_MMA))
+        else
+            println("***ERROR: unknown non-linear solver. Please specify either knitro or nlopt")
+            exit()
+        end
     else
         println("***ERROR: unknown version")
         exit()
@@ -232,7 +238,9 @@ function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA,
         @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
     end
     if elastic == false
-        @constraint(m, bA*x .== bb) # feas
+        # @constraint(m, bA*x .== bb) # feas
+        @constraint(m, bA*x .<= bb) # feas
+        @constraint(m, bA*x .>= bb) # feas
     end
 
 
@@ -241,13 +249,23 @@ function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA,
         @variable(m, u[1:nvars]>=0)
         if elastic == false
             @variable(m, v[1:nvars])
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
-            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+            # @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] <= 0)
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] >= 0)
+            # @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] <= 0)
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] >= 0)
         else
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
+            # @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] <= 0)
+            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] >= 0)
         end
-        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
-        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
+        # @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
+        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] <= 0)
+        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] >= 0)
+        # @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
+        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] <= 0)
+        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] >= 0)
 
     end
 
@@ -271,83 +289,30 @@ function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA,
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
-    # SPECIAL CASE FOR HOTELLING MODEL WITH TWO SUPPLIERS AND LOCATIONS 0 and 1.
-    if version == "centralized"
-        m = Model(solver=GurobiSolver(MIPGap = 1e-12))
-    elseif version == "decentralized"
-        m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 500,
-                                      algorithm = KTR_ALG_ACT_CG,
-                                      outmode = KTR_OUTMODE_SCREEN,
-                                      KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
-                                      KTR_PARAM_MIP_OUTINTERVAL = 1,
-                                      KTR_PARAM_MIP_MAXNODES = 10000,
-                                      KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
-    else
-        println("***ERROR: unknown version")
-        exit()
-    end
-
-    if x0 != nothing
-        @variable(m, x[i=1:nvars]>=0, start=x0[i])
-        @variable(m, t[i=1:nvars]>=0, start=t0[i])
-    else
-        @variable(m, x[1:nvars]>=0)
-        @variable(m, t[1:nvars]>=0)
-    end
 
 
-    @variable(m, k[1:nvars])
-    @variable(m, z)
+# =================
+# EXECUTION
+# =================
+# TO SET PARAMETERS FOR SIMULATION, CHANGE HERE!
+# SUPPLIERS AND TYPES
+# types = Dict(1=>8, 2=>10, 3=>12)
+# fm = Dict(1=>[0.25,0.5,0.25],2=>[0.25,0.5,0.25])
+types = Dict(1=>8, 2=>10, 3=>12)
+fm = Dict(1=>[1/3,1/3,1/3],2=>[1/3,1/3,1/3])
+# types = Dict(1=>0.1, 2=>0.2)
+# fm = Dict(1=>[0.6,0.4],2=>[0.6,0.4])
+# types = Dict(1=>0.1, 2=>0.2, 3=>0.25)
+# fm = Dict(1=>[0.25,0.5, 0.25],2=>[0.2, 0.6, 0.2])
+V = check_vc_increasing(fm)
 
-    # normal constraints
-    @constraint(m, z <=  -0.5*delta*wq_t'*x.^2 - wq_t'*t)
-    # @constraint(m, def_k[i=1:nsupp, j=1:sts],
-    #             -0.5*delta*() - k[(j-1)*nsupp+i]>= 0)
-    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC interim
-
-    # special constraints
-    if expostir == true
-        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
-        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
-    end
-    if elastic == false
-        @constraint(m, bA*x .== bb) # feas
-    end
+# PARAMETERS OF THE PROBLEM: LOCATIONS AND TRANSPORTATION COST
+loc = [0,1]
+delta = 5
+elastic = false
+expostir = false
 
 
-    if version == "decentralized"
-        @variable(m, p[1:nvars]>=0)
-        @variable(m, u[1:nvars]>=0)
-        if elastic == false
-            @variable(m, v[1:nvars])
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
-            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
-        else
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
-        end
-        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
-        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-
-    end
-
-    @objective(m, Max, z)
-
-    print(m)
-    # exit()
-
-    status = solve(m)
-    obj = -getobjectivevalue(m)
-    x_vals = getvalue(x)
-    t_vals = getvalue(t)
-    transfers = wq_t'*t_vals
-    # println("Objective value: ", getobjectivevalue(m))
-    #
-    println("===============================")
-    println("Objective value: ", getobjectivevalue(m))
-    println("Allocations: ", getvalue(x))
-    println("Transfers: ", getvalue(t))
-    println("===============================")
-    return obj, transfers, x_vals, t_vals
-end
+nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, fth, Theta = GenerateInputs(types, fm)
+obj_cent, tra_cent, x_cent, t_cent = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "centralized", elastic, expostir)
+obj_dec, tra_dec, x_dec, t_dec = SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, "decentralized", elastic, expostir, x_cent, t_cent, "nlopt")

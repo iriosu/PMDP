@@ -1,6 +1,6 @@
 using JuMP
 using PyPlot
-using Gurobi, KNITRO
+using Gurobi, KNITRO, NLopt
 include("utilities.jl")
 
 # ==============================
@@ -121,9 +121,29 @@ function GenerateExPostInputs(types, Theta, nsupp, nvars)
     return bIR_x, bIR_t, bh
 end
 
-function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, loc, delta, version, elastic=false, x0=nothing, t0=nothing)
+function InputsObjectiveLM(nalpha, nGamma, f, Theta, nsupp, ntypes, nvars, sts)
+    nD = inv(nGamma)
+    nc = nD*nalpha
+
+    D = zeros((nvars, nvars)) # matrix D in diagonal
+    wD = zeros((nvars, nvars)) # matrix D weighted by distribution of types
+    wq_x = zeros(nvars)
+    q_x = zeros(nvars)
+    for i in 1:sts
+        # unweighted parameters for objective function
+        D[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = nD
+        q_x[nsupp*(i-1)+1:nsupp*i] = nc
+        # weighted by probabilities of each scenario
+        wD[nsupp*(i-1)+1:nsupp*i,nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nD
+        wq_x[nsupp*(i-1)+1:nsupp*i] = f[Theta[i]]*nc
+    end
+    return D, wD, q_x, wq_x
+end
+
+function CheckFeasibility(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
+
     if version == "centralized"
-        m = Model(solver=GurobiSolver(MIPGap = 1e-12))
+        m = Model(solver=GurobiSolver(Presolve=0, MIPGap = 1e-12))
     elseif version == "decentralized"
         m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
                                       ms_enable = 1, ms_maxsolves = 5000,
@@ -145,42 +165,31 @@ function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_
         @variable(m, x[1:nvars]>=0)
         @variable(m, t[1:nvars]>=0)
     end
-    @variable(m, k[1:nvars])
+    @variable(m, z)
 
     # constraints centralized version: IR, IC, feas
     @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
     if elastic == false
         @constraint(m, bA*x .== bb) # feas
     end
-    @constraint(m, def_k[i=1:nsupp, j=1:sts],
-                -0.5*delta*((loc[i] - sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i-1)))^2
-                            + (sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i))-loc[i])^2 ) - k[(j-1)*nsupp+i]>= 0)
+    @constraint(m, z <=  wc_x'*x - wq_t'*t - 0.5*x'*wD*x )
 
     if version == "decentralized"
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
         @variable(m, v[1:nvars])
-        # @constraint(m, kkt_opt[i=1:nsupp, j=1:sts],
-        #         p[(j-1)*nsupp+i] - u[(j-1)*nsupp+i] + v[(j-1)*nsupp+i]
-        #         + delta*( sum( ( sum( x[s] for s=((j-1)*nsupp+1):r)-loc[r-(j-1)*nsupp] ) for r=((j-1)*nsupp+i):(j*nsupp) ) )
-        #         - delta*( sum( ( loc[r+1-(j-1)*nsupp] - sum( x[s] for s=((j-1)*nsupp+1):r) ) for r=((j-1)*nsupp+i):(j*nsupp-1) ) ) == 0)
-        @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
+        @constraint(m, kkt_opt, p - c_x + D*x - u + v .== 0)
         @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
         @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
         @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
     end
-
     @objective(m, Max, 1)
-
     print(m)
-    # exit()
     status = solve(m)
     obj = -getobjectivevalue(m)
     x_vals = getvalue(x)
     t_vals = getvalue(t)
     transfers = wq_t'*t_vals
-    # println("Objective value: ", getobjectivevalue(m))
-    #
     println("===============================")
     println("Objective value: ", getobjectivevalue(m))
     println("Allocations: ", getvalue(x))
@@ -189,19 +198,27 @@ function CheckFeasibility(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
-    # GENERAL CASE FOR HOTELLING MODEL WITH  MORE THAN TWO SUPPLIERS, BUT HAS A BUg IN OBJECTIVE FUNCTION
+function SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, version, elastic=false, expostir=false, x0=nothing, t0=nothing, nlsolver="nlopt")
+
     if version == "centralized"
-        m = Model(solver=GurobiSolver(MIPGap = 1e-12))
+        m = Model(solver=GurobiSolver(Presolve=0, MIPGap = 1e-12))
     elseif version == "decentralized"
-        m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 500,
-                                      algorithm = KTR_ALG_ACT_CG,
-                                      outmode = KTR_OUTMODE_SCREEN,
-                                      KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
-                                      KTR_PARAM_MIP_OUTINTERVAL = 1,
-                                      KTR_PARAM_MIP_MAXNODES = 10000,
-                                      KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
+        if nlsolver == "knitro"
+            m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
+                                          ms_enable = 1, ms_maxsolves = 500,
+                                          algorithm = KTR_ALG_ACT_CG,
+                                          outmode = KTR_OUTMODE_SCREEN,
+                                          KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
+                                          KTR_PARAM_MIP_OUTINTERVAL = 1,
+                                          KTR_PARAM_MIP_MAXNODES = 10000,
+                                          KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW)) #par_numthreads = 2, par_msnumthreads = 1,
+        elseif nlsolver == "nlopt"
+            m = Model(solver=NLoptSolver(algorithm=:LD_MMA))
+        else
+            println("***ERROR: unknown non-linear solver. Please specify either knitro or nlopt")
+            exit()
+        end
+
     else
         println("***ERROR: unknown version")
         exit()
@@ -214,55 +231,54 @@ function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA,
         @variable(m, x[1:nvars]>=0)
         @variable(m, t[1:nvars]>=0)
     end
-
-
-    @variable(m, k[1:nvars])
     @variable(m, z)
 
-    # normal constraints
-    @constraint(m, z <=  wq_t'*k - wq_t'*t)
-    @constraint(m, def_k[i=1:nsupp, j=1:sts],
-                -0.5*delta*((loc[i] - sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i-1)))^2
-                            + (sum(x[k] for k=((j-1)*nsupp+1):((j-1)*nsupp+i))-loc[i])^2 ) - k[(j-1)*nsupp+i]>= 0)
-    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC interim
+    # constraints centralized version: IR, IC, feas
+    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC
+    if elastic == false
+        # @constraint(m, bA*x .== bb) # replacing == for two inequalities due to NLopt
+        @constraint(m, bA*x .>= bb) # feas
+        @constraint(m, bA*x .<= bb) # feas
+    end
+    @constraint(m, z <=  wc_x'*x - wq_t'*t - 0.5*x'*wD*x )
 
     # special constraints
     if expostir == true
-        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
         @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
     end
-    if elastic == false
-        @constraint(m, bA*x .== bb) # feas
-    end
-
 
     if version == "decentralized"
         @variable(m, p[1:nvars]>=0)
         @variable(m, u[1:nvars]>=0)
         if elastic == false
             @variable(m, v[1:nvars])
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
-            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+            # @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] <= 0)
+            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] >= 0)
+            # @constraint(m, kkt_opt, p - c_x + D*x - u + v .== 0)
+            @constraint(m, kkt_opt, p - c_x + D*x - u + v .<= 0)
+            @constraint(m, kkt_opt, p - c_x + D*x - u + v .>= 0)
         else
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
+            # @constraint(m, kkt_opt, p - c_x + D*x - u .== 0)
+            @constraint(m, kkt_opt, p - c_x + D*x - u .<= 0)
+            @constraint(m, kkt_opt, p - c_x + D*x - u .>= 0)
         end
-        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
-        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-
+        # @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
+        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] <= 0)
+        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] >= 0)
+        # @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
+        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] <= 0)
+        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] >= 0)
     end
 
     @objective(m, Max, z)
-
     print(m)
-    # exit()
-
     status = solve(m)
-    obj = -getobjectivevalue(m)
+    obj = getobjectivevalue(m)
     x_vals = getvalue(x)
     t_vals = getvalue(t)
+    println(c_x)
     transfers = wq_t'*t_vals
-    # println("Objective value: ", getobjectivevalue(m))
-    #
     println("===============================")
     println("Objective value: ", getobjectivevalue(m))
     println("Allocations: ", getvalue(x))
@@ -271,83 +287,39 @@ function SolveOptimizationGeneral(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA,
     return obj, transfers, x_vals, t_vals
 end
 
-function SolveOptimization(nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, types, Theta, loc, delta, version, elastic=false, expostir=false, x0=nothing, t0=nothing)
-    # SPECIAL CASE FOR HOTELLING MODEL WITH TWO SUPPLIERS AND LOCATIONS 0 and 1.
-    if version == "centralized"
-        m = Model(solver=GurobiSolver(MIPGap = 1e-12))
-    elseif version == "decentralized"
-        m = Model(solver=KnitroSolver(mip_method = KTR_MIP_METHOD_BB, honorbnds=0,
-                                      ms_enable = 1, ms_maxsolves = 500,
-                                      algorithm = KTR_ALG_ACT_CG,
-                                      outmode = KTR_OUTMODE_SCREEN,
-                                      KTR_PARAM_OUTLEV = KTR_OUTLEV_ALL,
-                                      KTR_PARAM_MIP_OUTINTERVAL = 1,
-                                      KTR_PARAM_MIP_MAXNODES = 10000,
-                                      KTR_PARAM_HESSIAN_NO_F = KTR_HESSIAN_NO_F_ALLOW))
-    else
-        println("***ERROR: unknown version")
-        exit()
-    end
-
-    if x0 != nothing
-        @variable(m, x[i=1:nvars]>=0, start=x0[i])
-        @variable(m, t[i=1:nvars]>=0, start=t0[i])
-    else
-        @variable(m, x[1:nvars]>=0)
-        @variable(m, t[1:nvars]>=0)
-    end
-
-
-    @variable(m, k[1:nvars])
-    @variable(m, z)
-
-    # normal constraints
-    @constraint(m, z <=  -0.5*delta*wq_t'*x.^2 - wq_t'*t)
-    # @constraint(m, def_k[i=1:nsupp, j=1:sts],
-    #             -0.5*delta*() - k[(j-1)*nsupp+i]>= 0)
-    @constraint(m, bG_x*x + bG_t*t .>= bh) # IR + IC interim
-
-    # special constraints
-    if expostir == true
-        epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
-        @constraint(m, epG_x*x + epG_t*t .>= eph) # IR + IC
-    end
-    if elastic == false
-        @constraint(m, bA*x .== bb) # feas
-    end
-
-
-    if version == "decentralized"
-        @variable(m, p[1:nvars]>=0)
-        @variable(m, u[1:nvars]>=0)
-        if elastic == false
-            @variable(m, v[1:nvars])
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + v[i] + delta*x[i] == 0)
-            @constraint(m, kkt_cons[i in 1:sts], v[nsupp*(i-1)+1]-v[nsupp*(i-1)+2] == 0)
-        else
-            @constraint(m, kkt_opt[i in 1:nvars], p[i] - u[i] + delta*x[i] == 0)
-        end
-        @NLconstraint(m, var_def[i in 1:nvars], t[i]-x[i]*p[i] == 0)
-        @NLconstraint(m, kkt_comp[i in 1:nvars], x[i]*u[i] == 0)
-
-    end
-
-    @objective(m, Max, z)
-
-    print(m)
-    # exit()
-
-    status = solve(m)
-    obj = -getobjectivevalue(m)
-    x_vals = getvalue(x)
-    t_vals = getvalue(t)
-    transfers = wq_t'*t_vals
-    # println("Objective value: ", getobjectivevalue(m))
-    #
-    println("===============================")
-    println("Objective value: ", getobjectivevalue(m))
-    println("Allocations: ", getvalue(x))
-    println("Transfers: ", getvalue(t))
-    println("===============================")
-    return obj, transfers, x_vals, t_vals
+function FormulateAndSolve(types, fm, nalpha, nGamma, elastic=false, expostir=false)
+    nsupp, ntypes, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, distr, Theta = GenerateInputs(types, fm)
+    D, wD, c_x, wc_x = InputsObjectiveLM(nalpha, nGamma, distr, Theta, nsupp, ntypes, nvars, sts)
+    epG_x, epG_t, eph = GenerateExPostInputs(types, Theta, nsupp, nvars)
+    obj_cent, transfers_cent, x_cent, t_cent = SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, "centralized", elastic, expostir)
+    obj_dec, transfers_dec, x_dec, t_dec = SolveOptimization(nsupp, nvars, sts, bG_x, bG_t, bh, bA, bb, wq_t, D, wD, c_x, wc_x, epG_x, epG_t, eph, "decentralized", elastic, expostir, x_cent, t_cent )
+    return obj_cent, transfers_cent, x_cent, t_cent, obj_dec, transfers_dec, x_dec, t_dec
 end
+
+
+
+
+# =================
+# EXECUTION
+# =================
+# TO SET PARAMETERS FOR SIMULATION, CHANGE HERE!
+
+# SUPPLIERS AND TYPES
+N = 2 # number of suppliers
+types = Dict(1=>10, 2=>10.5)
+dist = [0.2,0.8]
+fm = Dict(i=>dist for i=1:N)
+
+
+# QUALITIES AND DEMAND PARAMETERS
+# if you want to run a single instance, enter a list with just one element
+gamma_ii = [1] #1:1:10 #4
+gamma_ij = [0.05]#0.05:0.1:0.95 #0.05:0.1:0.95 #0.05:0.1:0.95 #4
+a_j = [11]# linspace(25,100,4)
+
+alpha = a_j[1]*ones(N)
+Gamma =  gamma_ii[1]*eye(N)-gamma_ij[1]*(ones(N,N)-eye(N))
+elastic = false
+expostir = false
+
+obj_cent, transfers_cent, x_cent, t_cent, obj_dec, transfers_dec, x_dec, t_dec = FormulateAndSolve(types, fm, alpha, Gamma, elastic, expostir)
